@@ -41,6 +41,8 @@ from kubernetes import client,config
 import kubernetes.client
 from kubernetes.client.rest import ApiException
 
+import eks_token
+
 # TODO: Remove any references to AWS
 _EXECUTOR_PLUGIN_DEFAULTS = {
     "credentials": os.environ.get("AWS_SHARED_CREDENTIALS_FILE")
@@ -56,11 +58,83 @@ _EXECUTOR_PLUGIN_DEFAULTS = {
 executor_plugin_name  = "KubernetesExecutor"
 
 # TODO: Update docstrings
+
+class KubeAuth():
+
+    def __init__(self,
+                 cluster_endpoint,
+                 cluster_certificate
+    ):
+        self.cluster_endpoint = cluster_endpoint,
+        self.cluster_certificate = cluster_certificate
+
+    def _write_cafile(self,data: str) -> tempfile.NamedTemporaryFile:
+        # protect yourself from automatic deletion
+        cafile = tempfile.NamedTemporaryFile(delete=False)
+        cadata_b64 = data
+        cadata = base64.b64decode(cadata_b64)
+        cafile.write(cadata)
+        cafile.flush()
+        return cafile
+
+
+    def authenticate(self):
+        config = self.get_config()
+
+        #print(config.api_key)
+        
+        with kubernetes.client.ApiClient(configuration = config) as api_client:
+
+            core_api = kubernetes.client.CoreV1Api(api_client=api_client)
+
+            try:
+                response = core_api.list_namespace()
+                return True
+            except:
+                #print(response)
+                #print("Authentication failure")
+                return False
+
+
+class BearerAuth(KubeAuth):
+
+    def __init__(self,
+                 token,
+                 **kwargs
+                 
+    ):
+        super().__init__(**kwargs)
+
+        self.token = token
+        
+    def get_config(self):
+        kconfig = kubernetes.config.kube_config.Configuration(
+            host=self.cluster_endpoint[0],
+            api_key={'authorization': 'Bearer ' + self.token}
+        )
+        kconfig.ssl_ca_cert = self._write_cafile(self.cluster_certificate).name
+        
+        return kconfig
+
+# eks = boto3.client('eks')
+
+        
+# response = eks.describe_cluster(name="covalent-cluster")
+
+# my_token = eks_token.get_token("covalent-cluster")
+        
+
+# auth = BearerAuth(token = my_token['status']['token'] , cluster_endpoint = response['cluster']['endpoint'],
+#                   cluster_certificate = response['cluster']['certificateAuthority']["data"])
+
+# auth.authenticate()
+    
 class KubernetesExecutor(BaseExecutor):
     """Kubernetes executor plugin class."""
 
     def __init__(
         self,
+            auth: KubeAuth,
         s3_bucket_name: str,
         ecr_repo_name: str,
         eks_cluster_name: str,
@@ -69,6 +143,7 @@ class KubernetesExecutor(BaseExecutor):
         **kwargs,
     ):
         super().__init__(**kwargs)
+        self.auth = auth
         self.s3_bucket_name = s3_bucket_name
         self.ecr_repo_name = ecr_repo_name
         self.eks_cluster_name = eks_cluster_name
@@ -86,6 +161,7 @@ class KubernetesExecutor(BaseExecutor):
         node_id: int = -1,
     ) -> Tuple[Any, str, str]:
         
+        
         dispatch_info = DispatchInfo(dispatch_id)
         result_filename = f"result-{dispatch_id}-{node_id}.pkl"
         task_results_dir = os.path.join(results_dir, dispatch_id)
@@ -93,25 +169,19 @@ class KubernetesExecutor(BaseExecutor):
         container_name = f"covalent-task-{image_tag}"
         job_name = f"job-{dispatch_id}-{node_id}"
 
-        # AWS Credentials
-        #os.environ["AWS_SHARED_CREDENTIALS_FILE"] = self.credentials
-        #os.environ["AWS_PROFILE"] = self.profile
+        eks = boto3.client('eks')
 
-        config.load_kube_config()
         
-        # AWS Account Retrieval
-        sts = boto3.client("sts")
-        #identity = sts.get_caller_identity()
-        #account = identity.get("Account")
+        if self.auth.authenticate() is False:
+            raise Exception("Authentication failure")
+        
+        kconfig = self.auth.get_config()
+        
+        api_client = kubernetes.client.ApiClient(configuration=kconfig)
 
-        #if account is None:
-        #    app_log.warning(identity)
-        #    return None, "", identity
+        
 
-        # TODO: Move this to BaseExecutor
         Path(self.cache_dir).mkdir(parents=True, exist_ok=True)
-
-
 
         
         with self.get_dispatch_context(dispatch_info):
@@ -124,7 +194,6 @@ class KubernetesExecutor(BaseExecutor):
                 args,
                 kwargs,
             )
-
 
 
             container = client.V1Container(
@@ -147,11 +216,11 @@ class KubernetesExecutor(BaseExecutor):
 
             #print(job)
 
-            batch_api = client.BatchV1Api()
+            batch_api = client.BatchV1Api(api_client = api_client)
             batch_api.create_namespaced_job("default", job)
             
 
-            self._poll_ecs_task(job_name)
+            self._poll_ecs_task(job_name,api_client)
 
             results = self._query_result(result_filename, task_results_dir, image_tag)
 
@@ -322,8 +391,9 @@ CMD ["{docker_working_dir}/{func_basename}"]
         ecr_registry = ecr_credentials["proxyEndpoint"]
         ecr_repo_uri = f"{ecr_registry.replace('https://', '')}/{self.ecr_repo_name}:{image_tag}"
 
-        docker_client.login(username=ecr_username, password=ecr_password, registry=ecr_registry)
+        response = docker_client.login(username=ecr_username, password=ecr_password, registry=ecr_registry)
 
+        
         # Tag the image
         image.tag(ecr_repo_uri, tag=image_tag)
 
@@ -332,7 +402,7 @@ CMD ["{docker_working_dir}/{func_basename}"]
 
         return ecr_repo_uri
 
-    def get_status(self,name:str, name_space: str = "default") :
+    def get_status(self,name:str, api_client, name_space: str = "default") :
         """Query the status of a previously submitted EKS job.
 
         Args:
@@ -344,36 +414,51 @@ CMD ["{docker_working_dir}/{func_basename}"]
         """
 
 
-        with kubernetes.client.ApiClient() as api_client:
-            # Create an instance of the API class
-            api_instance = kubernetes.client.BatchV1Api(api_client)
-            
-            try:
-                job = api_instance.read_namespaced_job_status(name,name_space)
+        # Create an instance of the API class
+        api_instance = kubernetes.client.BatchV1Api(api_client = api_client)
+        
+        try:
+            job = api_instance.read_namespaced_job_status(name,name_space)
+            with open('/home/poojith/agnostiq/tempfilename1.txt', 'w') as f:
+                    print(job, file=f)
+            if job.status.succeeded is not None:
                 if job.status.succeeded > 0:
                     return 1
-                else:
+                elif job.status.active > 0:
                     return 0
-            except:
-                print("No such name/namespace")
-                return -1
+                return -2
+        except:
+            return -1
 
-    def _poll_ecs_task(self, name: str, name_space:str = "default") -> None:
-        """Poll an ECS task until completion.
+    def _poll_ecs_task(self, name: str, api_client, name_space:str = "default") -> None:
+        """Poll an EKS task until completion.
 
         Args:
             name: EKS job name.
-            name_space: name_space of job job.
+            name_space: name_space of job.
 
         Returns:
             None
         """
 
-        exit_code = self.get_status(name,name_space)
+        exit_code = self.get_status(name,api_client,name_space)
 
         while exit_code != 1:
             time.sleep(self.poll_freq)
-            exit_code = self.get_status(name,name_space)
+            exit_code = self.get_status(name,api_client,name_space)
+
+            if exit_code == -1:
+                api_instance = kubernetes.client.BatchV1Api(api_client = api_client)
+                job = api_instance.read_namespaced_job_status(name,name_space)
+
+                app_log.debug("Error while polling job")
+                app_log.debug(job)
+
+                with open('/home/poojith/agnostiq/tempfilename.txt', 'w') as f:
+                    print(job, file=f)
+                raise Exception("Error while polling job")
+                break
+        
 
     def _query_result(
         self,
@@ -405,3 +490,22 @@ CMD ["{docker_working_dir}/{func_basename}"]
         os.remove(local_result_filename)
 
         return result
+
+    def _write_cafile(self,data: str) -> tempfile.NamedTemporaryFile:
+        # protect yourself from automatic deletion
+        cafile = tempfile.NamedTemporaryFile(delete=False)
+        cadata_b64 = data
+        cadata = base64.b64decode(cadata_b64)
+        cafile.write(cadata)
+        cafile.flush()
+        return cafile
+
+    def k8s_api_client(self,endpoint: str, token: str, cafile: str) -> kubernetes.client.CoreV1Api:
+        kconfig = kubernetes.config.kube_config.Configuration(
+            host=endpoint,
+            api_key={'authorization': 'Bearer ' + token}
+        )
+        kconfig.ssl_ca_cert = cafile
+        kclient = kubernetes.client.ApiClient(configuration=kconfig)
+        return kclient
+
