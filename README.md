@@ -12,22 +12,36 @@
 
 To use the plugin:
 
-1. Run the command `aws eks describe-cluster --name covalent-cluster` and note down the cluster.endpoint and cluster.certificateAuthority.data values.
-2. Run the command `aws eks get-token --cluster-name covalent-cluster` and note down the status.token value.
-3. Authentication code:
+1. Mount a shared folder on minikube node using the command `minikube mount /home/poojith/tmp-dir:/host`
 ```
-from covalent_kubernetes_plugin.k8s import BearerAuth
+import covalent as ct
 from covalent_kubernetes_plugin.k8s import KubernetesExecutor
 
-certificate = ""
-endpoint = "https://66AEA523CA0D5284DBA05C15F9BB97DC.sk1.us-west-2.eks.amazonaws.com"
-token = ""
+local_k8s_executor = KubernetesExecutor(docker_base_image = "python:3.8-slim-buster",
+                             poll_freq= 10,s3_bucket=False,k8_context = "minikube")
 
-auth = BearerAuth(token = token, cluster_endpoint = endpoint, cluster_certificate = certificate)
+eks_k8s_executor = KubernetesExecutor(docker_base_image = "python:3.8-slim-buster",
+                             poll_freq= 10,s3_bucket=True,k8_context = "poojith@covalent-cluster.us-west-2.eksctl.io")
 
 
-executor = KubernetesExecutor(auth = auth, s3_bucket_name = "covalent-tmp", ecr_repo_name = "covalent", docker_base_image = "python:3.8-slim-buster",
-                           eks_cluster_name = "covalent-cluster",  poll_freq= 10)
+# Construct tasks as "electrons"
+@ct.electron(executor=local_k8s_executor)
+def join_words(a, b):
+    return ", ".join([a, b])
+
+@ct.electron(executor = eks_k8s_executor)
+def excitement(a):
+    return f"{a}!"
+
+# Construct a workflow of tasks
+@ct.lattice
+def simple_workflow(a, b):
+    phrase = join_words(a, b)
+    return excitement(phrase)
+
+# Dispatch the workflow
+dispatch_id = ct.dispatch(simple_workflow)("Hello", "World")
+
 ```
 
 
