@@ -45,12 +45,8 @@ import eks_token
 
 # TODO: Remove any references to AWS
 _EXECUTOR_PLUGIN_DEFAULTS = {
-    "credentials": os.environ.get("AWS_SHARED_CREDENTIALS_FILE")
-    or os.path.join(os.environ["HOME"], ".aws/credentials"),
-    "profile": os.environ.get("AWS_PROFILE") or "",
     "s3_bucket_name": "covalent-tmp",
     "ecr_repo_name": "covalent",
-    "eks_cluster_name": "covalent-cluster",
     "cache_dir": "/tmp/covalent",
     "poll_freq": 10,
 }
@@ -59,108 +55,38 @@ executor_plugin_name  = "KubernetesExecutor"
 
 # TODO: Update docstrings
 
-class KubeAuth():
 
-    def __init__(self,
-                 cluster_endpoint,
-                 cluster_certificate
-    ):
-        self.cluster_endpoint = cluster_endpoint,
-        self.cluster_certificate = cluster_certificate
-
-    def _write_cafile(self,data: str) -> tempfile.NamedTemporaryFile:
-        # protect yourself from automatic deletion
-        cafile = tempfile.NamedTemporaryFile(delete=False)
-        cadata_b64 = data
-        cadata = base64.b64decode(cadata_b64)
-        cafile.write(cadata)
-        cafile.flush()
-        return cafile
-
-
-    def authenticate(self):
-        config = self.get_config()
-
-        #print(config.api_key)
-        
-        with kubernetes.client.ApiClient(configuration = config) as api_client:
-
-            core_api = kubernetes.client.CoreV1Api(api_client=api_client)
-
-            try:
-                response = core_api.list_namespace()
-                return True
-            except:
-                #print(response)
-                #print("Authentication failure")
-                return False
-
-
-class BearerAuth(KubeAuth):
-
-    def __init__(self,
-                 token,
-                 **kwargs
-                 
-    ):
-        super().__init__(**kwargs)
-
-        self.token = token
-        
-    def get_config(self):
-        kconfig = kubernetes.config.kube_config.Configuration(
-            host=self.cluster_endpoint[0],
-            api_key={'authorization': 'Bearer ' + self.token}
-        )
-        kconfig.ssl_ca_cert = self._write_cafile(self.cluster_certificate).name
-        
-        return kconfig
-
-# eks = boto3.client('eks')
-
-        
-# response = eks.describe_cluster(name="covalent-cluster")
-
-# my_token = eks_token.get_token("covalent-cluster")
-        
-
-# auth = BearerAuth(token = my_token['status']['token'] , cluster_endpoint = response['cluster']['endpoint'],
-#                   cluster_certificate = response['cluster']['certificateAuthority']["data"])
-
-# auth.authenticate()
     
 class KubernetesExecutor(BaseExecutor):
     """Kubernetes executor plugin class."""
 
     def __init__(
         self,
-            auth: KubeAuth,
-        s3_bucket_name: str,
-        ecr_repo_name: str,
-        eks_cluster_name: str,
         docker_base_image: str,
         poll_freq: int,
+        k8_context:str,
+        s3_bucket = False,        
         **kwargs,
     ):
         super().__init__(**kwargs)
-        self.auth = auth
-        self.s3_bucket_name = s3_bucket_name
-        self.ecr_repo_name = ecr_repo_name
-        self.eks_cluster_name = eks_cluster_name
+        self.s3_bucket_name = _EXECUTOR_PLUGIN_DEFAULTS["s3_bucket_name"]
+        self.s3_bucket = s3_bucket
+        self.ecr_repo_name = _EXECUTOR_PLUGIN_DEFAULTS["ecr_repo_name"]
         self.poll_freq = poll_freq
         self.cache_dir = _EXECUTOR_PLUGIN_DEFAULTS["cache_dir"]
         self.docker_base_image = docker_base_image
+        self.k8_context = k8_context
 
     def execute(
-        self,
+            self,
             function: TransportableObject,
-        args: List,
-        kwargs: Dict,
-        dispatch_id: str,
-        results_dir: str,
-        node_id: int = -1,
+            args: List,
+            kwargs: Dict,
+            dispatch_id: str,
+            results_dir: str,
+            node_id: int = -1,
     ) -> Tuple[Any, str, str]:
-        
+            
         
         dispatch_info = DispatchInfo(dispatch_id)
         result_filename = f"result-{dispatch_id}-{node_id}.pkl"
@@ -169,17 +95,21 @@ class KubernetesExecutor(BaseExecutor):
         container_name = f"covalent-task-{image_tag}"
         job_name = f"job-{dispatch_id}-{node_id}"
 
-        eks = boto3.client('eks')
+        config.load_kube_config()
 
-        
-        if self.auth.authenticate() is False:
-            raise Exception("Authentication failure")
-        
-        kconfig = self.auth.get_config()
-        
-        api_client = kubernetes.client.ApiClient(configuration=kconfig)
 
+        contexts, active_context = config.list_kube_config_contexts()
+        contexts = [context['name'] for context in contexts]
+
+        # with open('/home/poojith/agnostiq/tempfilename.txt', 'w') as f:
+        #     print(contexts, file=f)
+
+        if self.k8_context not in contexts:
+            raise Exception(f"Context {self.k8_context} not present in default kube config file")
         
+        #api_client = kubernetes.client.ApiClient()
+
+        api_client = config.new_client_from_config(context=self.k8_context)
 
         Path(self.cache_dir).mkdir(parents=True, exist_ok=True)
 
@@ -195,15 +125,30 @@ class KubernetesExecutor(BaseExecutor):
                 kwargs,
             )
 
-
-            container = client.V1Container(
+            if self.s3_bucket:   
+                container = client.V1Container(
+                    name = container_name,
+                    image = ecr_repo_uri
+                )
+                pod_template = client.V1PodTemplateSpec(
+                    spec=client.V1PodSpec(restart_policy="Never", containers=[container])
+                )
+            else:
+                volume = client.V1Volume(
+                    name = "host-mount",
+                    host_path = client.V1HostPathVolumeSource(path = "/host")
+                )
+                
+                container = client.V1Container(
                 name = container_name,
-                image = ecr_repo_uri
-            )
+                image = ecr_repo_uri,
+                image_pull_policy = "Never",
+                volume_mounts = [client.V1VolumeMount(mount_path = "/host",name = "host-mount")]
+                )
+                pod_template = client.V1PodTemplateSpec(
+                    spec=client.V1PodSpec(restart_policy="Never", containers=[container],volumes = [volume])
+                )
 
-            pod_template = client.V1PodTemplateSpec(
-                spec=client.V1PodSpec(restart_policy="Never", containers=[container])
-            )
 
             metadata = client.V1ObjectMeta(name = job_name)
 
@@ -213,8 +158,6 @@ class KubernetesExecutor(BaseExecutor):
                 metadata=metadata,
                 spec=client.V1JobSpec(backoff_limit=0, template=pod_template),
             )
-
-            #print(job)
 
             batch_api = client.BatchV1Api(api_client = api_client)
             batch_api.create_namespaced_job("default", job)
@@ -249,16 +192,37 @@ class KubernetesExecutor(BaseExecutor):
             script: String object containing the executable Python script.
         """
 
-        exec_script = """
-import os
+        read_from_bucket = """
+
 import boto3
-import cloudpickle as pickle
-
-local_func_filename = os.path.join("{docker_working_dir}", "{func_filename}")
-local_result_filename = os.path.join("{docker_working_dir}", "{result_filename}")
-
 s3 = boto3.client("s3")
 s3.download_file("{s3_bucket_name}", "{func_filename}", local_func_filename)
+
+        """.format(
+            func_filename=func_filename,
+            s3_bucket_name=self.s3_bucket_name,
+        )
+        save_to_bucket = """
+s3.upload_file(local_result_filename, "{s3_bucket_name}", "{result_filename}")
+        """.format(
+            result_filename=result_filename,
+            s3_bucket_name=self.s3_bucket_name,
+        )
+        
+        exec_script = """
+import os
+import cloudpickle as pickle
+        
+local_func_filename = os.path.join("{docker_working_dir}", "{func_filename}")
+local_result_filename = os.path.join("{docker_working_dir}", "{result_filename}")
+        
+        """.format(docker_working_dir=docker_working_dir,
+                   func_filename=func_filename,
+                   result_filename=result_filename
+        )
+        if self.s3_bucket:
+            exec_script += read_from_bucket
+        exec_script += """
 
 with open(local_func_filename, "rb") as f:
     function = pickle.load(f)
@@ -268,15 +232,14 @@ result = function(*{args}, **{kwargs})
 with open(local_result_filename, "wb") as f:
     pickle.dump(result, f)
 
-s3.upload_file(local_result_filename, "{s3_bucket_name}", "{result_filename}")
-""".format(
-            func_filename=func_filename,
+
+        """.format(
             args=args,
             kwargs=kwargs,
-            s3_bucket_name=self.s3_bucket_name,
-            result_filename=result_filename,
-            docker_working_dir=docker_working_dir,
         )
+
+        if self.s3_bucket:
+            exec_script += save_to_bucket
 
         return exec_script
 
@@ -309,7 +272,7 @@ CMD ["{docker_working_dir}/{func_basename}"]
             func_basename=os.path.basename(exec_script_filename),
             docker_working_dir=docker_working_dir,
         )
-
+        
         return dockerfile
 
     def _package_and_upload(
@@ -339,14 +302,23 @@ CMD ["{docker_working_dir}/{func_basename}"]
         func_filename = f"func-{image_tag}.pkl"
         docker_working_dir = "/opt/covalent"
 
+        local_working_dir = "/home/poojith/tmp-dir"
+
         with tempfile.NamedTemporaryFile(dir=self.cache_dir) as function_file:
             # Write serialized function to file
             pickle.dump(function.get_deserialized(), function_file)
             function_file.flush()
 
             # Upload pickled function to S3
-            s3 = boto3.client("s3")
-            s3.upload_file(function_file.name, self.s3_bucket_name, func_filename)
+            if self.s3_bucket:
+                s3 = boto3.client("s3")
+                s3.upload_file(function_file.name, self.s3_bucket_name, func_filename)
+                
+            else:
+                shared_pickle_file = local_working_dir + "/" + func_filename
+                shutil.copyfile(function_file.name, shared_pickle_file)
+
+                
 
         with tempfile.NamedTemporaryFile(
             dir=self.cache_dir, mode="w"
@@ -354,13 +326,23 @@ CMD ["{docker_working_dir}/{func_basename}"]
             dir=self.cache_dir, mode="w"
         ) as dockerfile_file:
             # Write execution script to file
-            exec_script = self._format_exec_script(
-                func_filename,
-                result_filename,
-                docker_working_dir,
-                args,
-                kwargs,
-            )
+            if self.s3_bucket:
+                exec_script = self._format_exec_script(
+                    func_filename,
+                    result_filename,
+                    docker_working_dir,
+                    args,
+                    kwargs,
+                )
+            else:
+                exec_script = self._format_exec_script(
+                    func_filename,
+                    result_filename,
+                    '/host',
+                    args,
+                    kwargs,
+                )
+                
             exec_script_file.write(exec_script)
             exec_script_file.flush()
 
@@ -374,33 +356,38 @@ CMD ["{docker_working_dir}/{func_basename}"]
 
             # Build the Docker image
             docker_client = docker.from_env()
+
             image, build_log = docker_client.images.build(
                 path=self.cache_dir, dockerfile=dockerfile_file.name, tag=image_tag
             )
 
-        # ECR config
-        ecr = boto3.client("ecr")
+        if self.s3_bucket:
+            # ECR config
+            ecr = boto3.client("ecr")
+            
+            ecr_username = "AWS"
+            ecr_credentials = ecr.get_authorization_token()["authorizationData"][0]
+            ecr_password = (
+                base64.b64decode(ecr_credentials["authorizationToken"])
+                .replace(b"AWS:", b"")
+                .decode("utf-8")
+            )
+            ecr_registry = ecr_credentials["proxyEndpoint"]
+            ecr_repo_uri = f"{ecr_registry.replace('https://', '')}/{self.ecr_repo_name}:{image_tag}"
 
-        ecr_username = "AWS"
-        ecr_credentials = ecr.get_authorization_token()["authorizationData"][0]
-        ecr_password = (
-            base64.b64decode(ecr_credentials["authorizationToken"])
-            .replace(b"AWS:", b"")
-            .decode("utf-8")
-        )
-        ecr_registry = ecr_credentials["proxyEndpoint"]
-        ecr_repo_uri = f"{ecr_registry.replace('https://', '')}/{self.ecr_repo_name}:{image_tag}"
-
-        response = docker_client.login(username=ecr_username, password=ecr_password, registry=ecr_registry)
-
+            response = docker_client.login(username=ecr_username, password=ecr_password, registry=ecr_registry)
         
-        # Tag the image
-        image.tag(ecr_repo_uri, tag=image_tag)
+            # Tag the image
+            image.tag(ecr_repo_uri, tag=image_tag)
 
-        # Push to ECR
-        response = docker_client.images.push(ecr_repo_uri, tag=image_tag)
-
-        return ecr_repo_uri
+            # Push to ECR
+            response = docker_client.images.push(ecr_repo_uri, tag=image_tag)
+            return ecr_repo_uri
+            
+        else:
+            response = subprocess.run(["minikube", "cache", "add", image_tag+":latest"])
+            return image_tag+":latest"
+    
 
     def get_status(self,name:str, api_client, name_space: str = "default") :
         """Query the status of a previously submitted EKS job.
@@ -419,8 +406,7 @@ CMD ["{docker_working_dir}/{func_basename}"]
         
         try:
             job = api_instance.read_namespaced_job_status(name,name_space)
-            with open('/home/poojith/agnostiq/tempfilename1.txt', 'w') as f:
-                    print(job, file=f)
+            
             if job.status.succeeded is not None:
                 if job.status.succeeded > 0:
                     return 1
@@ -454,8 +440,7 @@ CMD ["{docker_working_dir}/{func_basename}"]
                 app_log.debug("Error while polling job")
                 app_log.debug(job)
 
-                with open('/home/poojith/agnostiq/tempfilename.txt', 'w') as f:
-                    print(job, file=f)
+
                 raise Exception("Error while polling job")
                 break
         
@@ -482,8 +467,13 @@ CMD ["{docker_working_dir}/{func_basename}"]
 
         local_result_filename = os.path.join(task_results_dir, result_filename)
 
-        s3 = boto3.client("s3")
-        s3.download_file(self.s3_bucket_name, result_filename, local_result_filename)
+        if self.s3_bucket:
+            s3 = boto3.client("s3")
+            s3.download_file(self.s3_bucket_name, result_filename, local_result_filename)
+
+        else:
+            local_working_dir = "/home/poojith/tmp-dir"
+            shutil.copyfile(os.path.join(local_working_dir, result_filename),local_result_filename)
 
         with open(local_result_filename, "rb") as f:
             result = pickle.load(f)
