@@ -101,13 +101,10 @@ class KubernetesExecutor(BaseExecutor):
         contexts, active_context = config.list_kube_config_contexts()
         contexts = [context['name'] for context in contexts]
 
-        # with open('/home/poojith/agnostiq/tempfilename.txt', 'w') as f:
-        #     print(contexts, file=f)
 
         if self.k8_context not in contexts:
             raise Exception(f"Context {self.k8_context} not present in default kube config file")
         
-        #api_client = kubernetes.client.ApiClient()
 
         api_client = config.new_client_from_config(context=self.k8_context)
 
@@ -302,7 +299,7 @@ CMD ["{docker_working_dir}/{func_basename}"]
         func_filename = f"func-{image_tag}.pkl"
         docker_working_dir = "/opt/covalent"
 
-        local_working_dir = "/home/poojith/tmp-dir"
+        local_working_dir = os.path.join(os.path.expanduser('~'),'tmp-dir')
 
         with tempfile.NamedTemporaryFile(dir=self.cache_dir) as function_file:
             # Write serialized function to file
@@ -472,7 +469,7 @@ CMD ["{docker_working_dir}/{func_basename}"]
             s3.download_file(self.s3_bucket_name, result_filename, local_result_filename)
 
         else:
-            local_working_dir = "/home/poojith/tmp-dir"
+            local_working_dir = os.path.join(os.path.expanduser('~'),'tmp-dir')
             shutil.copyfile(os.path.join(local_working_dir, result_filename),local_result_filename)
 
         with open(local_result_filename, "rb") as f:
