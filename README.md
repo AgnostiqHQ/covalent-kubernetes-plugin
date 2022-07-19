@@ -12,7 +12,7 @@
 
 To use the plugin:
 
-1. Mount a shared folder on minikube node using the command `minikube mount /home/poojith/tmp-dir:/host`
+1. Mount a shared folder on minikube node using the command `minikube mount ~/tmp-dir:/host`
 ```
 import covalent as ct
 from covalent_kubernetes_plugin.k8s import KubernetesExecutor
