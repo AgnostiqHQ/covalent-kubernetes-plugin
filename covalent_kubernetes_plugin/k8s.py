@@ -156,11 +156,9 @@ class KubernetesExecutor(BaseExecutor):
 
         self._poll_task(api_client, job_name)
 
-        results = self._query_result(result_filename, image_tag)
+        result = self._query_result(result_filename, image_tag)
 
-        #batch_api.delete_namespaced_job(name=job_name, namespace = "default")
-
-        return results, "", ""
+        return result
 
     def _format_exec_script(
         self,
