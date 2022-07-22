@@ -21,24 +21,23 @@
 """Kubernetes executor plugin for the Covalent dispatcher."""
 
 import base64
+import cloudpickle as pickle
+import docker
 import os
 import shutil
 import subprocess
 import tempfile
 import toml
 import time
-from pathlib import Path
-from typing import Any, Dict, List, Tuple
-
-import cloudpickle as pickle
-import docker
-from covalent._shared_files.logger import app_log
-from covalent._shared_files.util_classes import DispatchInfo
-from covalent._workflow.transport import TransportableObject
-from covalent.executor import BaseExecutor
+import uuid
 
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+from covalent._shared_files.logger import app_log
+from covalent.executor import BaseExecutor
 
 _EXECUTOR_PLUGIN_DEFAULTS = {
     "base_image": "python:3.8-slim-bullseye",
@@ -82,10 +81,11 @@ class KubernetesExecutor(BaseExecutor):
     def run(self, function: callable, args: List, kwargs: Dict): 
         """Submit the function to a Kubernetes cluster."""
 
-        result_filename = f"result-{dispatch_id}-{node_id}.pkl"
-        image_tag = f"{dispatch_id}-{node_id}"
+        run_id = str(uuid.uuid4())
+        result_filename = f"result-{run_id}.pkl"
+        image_tag = f"{run_id}"
         container_name = f"covalent-task-{image_tag}"
-        job_name = f"job-{dispatch_id}-{node_id}"
+        job_name = f"job-{run_id}"
 
         # Load Kubernetes config file
         config.load_kube_config(self.k8s_config_file)
@@ -94,13 +94,13 @@ class KubernetesExecutor(BaseExecutor):
         contexts, active_context = config.list_kube_config_contexts()
         contexts = [context['name'] for context in contexts]
 
-        if self.k8_context not in contexts:
+        if self.k8s_context not in contexts:
             raise ValueError(
-                f"Context {self.k8_context} was not found in the Kubernetes config file."
+                f"Context {self.k8s_context} was not found in the Kubernetes config file."
             )
 
         # Create the client
-        api_client = config.new_client_from_config(context=self.k8_context)
+        api_client = config.new_client_from_config(context=self.k8s_context)
 
         # Create the cache directory used for storing pickles and metadata
         Path(self.cache_dir).mkdir(parents=True, exist_ok=True)
@@ -125,7 +125,7 @@ class KubernetesExecutor(BaseExecutor):
             client.V1VolumeMount(mount_path=self.data_store, name="local-mount")
         ] if self.data_store.startswith("/") else []
         pull_policy = "Never" \
-            if image_uri.beginswith("covalent-task") 
+            if image_uri.startswith("covalent-task") \
             else ""
 
         container = client.V1Container(
@@ -140,6 +140,7 @@ class KubernetesExecutor(BaseExecutor):
                 containers=[container],
                 volumes=volumes,
                 restart_policy="Never",
+            )
         )
 
         metadata = client.V1ObjectMeta(name=job_name)
@@ -311,8 +312,6 @@ CMD [ "{docker_working_dir}/{func_basename}" ]
                 func_filename,
                 result_filename,
                 docker_working_dir,
-                args,
-                kwargs,
             )
                 
             exec_script_file.write(exec_script)
@@ -491,22 +490,21 @@ CMD [ "{docker_working_dir}/{func_basename}" ]
         return result
 
     #TODO: remove this?
-    def _write_cafile(self,data: str) -> tempfile.NamedTemporaryFile:
-        # protect yourself from automatic deletion
-        cafile = tempfile.NamedTemporaryFile(delete=False)
-        cadata_b64 = data
-        cadata = base64.b64decode(cadata_b64)
-        cafile.write(cadata)
-        cafile.flush()
-        return cafile
+#    def _write_cafile(self,data: str) -> tempfile.NamedTemporaryFile:
+#        # protect yourself from automatic deletion
+#        cafile = tempfile.NamedTemporaryFile(delete=False)
+#        cadata_b64 = data
+#        cadata = base64.b64decode(cadata_b64)
+#        cafile.write(cadata)
+#        cafile.flush()
+#        return cafile
 
     #TODO: remove this?
-    def k8s_api_client(self,endpoint: str, token: str, cafile: str) -> kubernetes.client.CoreV1Api:
-        kconfig = kubernetes.config.kube_config.Configuration(
-            host=endpoint,
-            api_key={'authorization': 'Bearer ' + token}
-        )
-        kconfig.ssl_ca_cert = cafile
-        kclient = kubernetes.client.ApiClient(configuration=kconfig)
-        return kclient
-
+#    def k8s_api_client(self,endpoint: str, token: str, cafile: str) -> kubernetes.client.CoreV1Api:
+#        kconfig = kubernetes.config.kube_config.Configuration(
+#            host=endpoint,
+#            api_key={'authorization': 'Bearer ' + token}
+#        )
+#        kconfig.ssl_ca_cert = cafile
+#        kclient = kubernetes.client.ApiClient(configuration=kconfig)
+#        return kclient
