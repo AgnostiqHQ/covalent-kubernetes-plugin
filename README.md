@@ -25,6 +25,12 @@ To use this plugin with Covalent, simply install it using `pip`:
 pip install covalent-kubernetes-plugin
 ```
 
+Users can optionally enable support for AWS Elastic Kubernetes Service using
+
+```
+pip install covalent-kubernetes-plugin[aws]
+```
+
 The following shows a reference of a Covalent [configuration](https://covalent.readthedocs.io/en/latest/how_to/config/customization.html):
 
 ```
