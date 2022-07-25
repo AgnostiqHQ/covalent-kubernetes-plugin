@@ -48,6 +48,9 @@ setup_info = {
     "long_description_content_type": "text/markdown",
     "include_package_data": True,
     "install_requires": required,
+    "extras_require": {
+        "aws": ["boto3==1.20.48"],
+    },
     "classifiers": [
         "Development Status :: 3 - Alpha",
         "Environment :: Console",
