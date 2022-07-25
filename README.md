@@ -265,7 +265,7 @@ and inserting the following entry:
 ```
 data:
   mapUsers: |
-    - userarn: arn:aws:iam::356198252393:user/newuser
+    - userarn: arn:aws:iam::<account_id>:user/newuser
       username: newuser
 ```
 
