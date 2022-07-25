@@ -47,7 +47,6 @@ poll_freq = 10
 
 This describes a configuration for a minimal local deployment with images and data stores also located on the local machine.
 
-<!--1. Mount a shared folder on minikube node using the command `minikube mount ~/tmp-dir:/host`-->
 Next, interact with the Kubernetes backend via Covalent by declaring an executor class object and attaching it to an electron:
 
 ```
@@ -114,7 +113,20 @@ spec:
   backoffLimit: 4
 ```
 
-Deploy the test job using the command
+Before deploying the job, you will need to mount the Covalent cache directory so the Covalent server can communicate with the task container:
+
+```
+minikube mount ~/.cache/covalent:/data
+```
+
+If you experience a `Connection refused` error, ensure that the subnet used by minikube is whitelisted in your firewall. If you use `iptables`, you can use these commands:
+
+```
+iptables -A INPUT -s 192.168.49.0/24 -j ACCEPT
+iptables-save
+```
+
+Next, deploy the test job using the command
 
 ```
 kubectl apply -f job.yaml
