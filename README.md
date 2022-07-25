@@ -10,30 +10,63 @@
 
 ## Covalent Kubernetes Plugin
 
-To use the plugin:
+Covalent is a Pythonic workflow tool used to execute tasks on advanced computing hardware. This executor plugin interfaces Covalent with [Kubernetes](https://kubernetes.io/) clusters. In order for workflows to be deployable, users must be authenticated to an existing Kubernetes cluster. Users can view their Kubernetes configuration file and validate the connection using the commands 
 
-1. Mount a shared folder on minikube node using the command `minikube mount ~/tmp-dir:/host`
+```
+kubectl config view
+kubectl get nodes
+```
+
+Users who simply wish to test the plugin on minimal infrastructure should skip to the deployment instructions in the following sections.
+
+To use this plugin with Covalent, simply install it using `pip`:
+
+```
+pip install covalent-kubernetes-plugin
+```
+
+The following shows a reference of a Covalent [configuration](https://covalent.readthedocs.io/en/latest/how_to/config/customization.html):
+
+```
+[executors.k8s]
+base_image = "python:3.8-slim-bullseye"
+k8s_config_file = "/home/will/.kube/config"
+k8s_context = "minikube"
+registry = "localhost"
+registry_credentials_file = ""
+data_store = "/tmp"
+cache_dir = "/home/will/.cache/covalent"
+poll_freq = 10
+```
+
+This describes a configuration for a minimal local deployment with images and data stores also located on the local machine.
+
+<!--1. Mount a shared folder on minikube node using the command `minikube mount ~/tmp-dir:/host`-->
+Next, interact with the Kubernetes backend via Covalent by declaring an executor class object and attaching it to an electron:
+
 ```
 import covalent as ct
 from covalent_kubernetes_plugin.k8s import KubernetesExecutor
 
-local_k8s_executor = KubernetesExecutor(docker_base_image = "python:3.8-slim-buster",
-                             poll_freq= 10,s3_bucket=False,k8_context = "minikube")
+local_k8s_executor = KubernetesExecutor(k8s_context="minikube")
 
-eks_k8s_executor = KubernetesExecutor(docker_base_image = "python:3.8-slim-buster",
-                             poll_freq= 10,s3_bucket=True,k8_context = "poojith@covalent-cluster.us-west-2.eksctl.io")
+eks_executor = KubernetesExecutor(
+    k8s_context=user@ckp-test-cluster.us-east-1.eksctl.io,
+    registry="<account_id>.dkr.ecr.us-east-1.amazonaws.com",
+    data_store="s3://<bucket_name>/<file_path>/"
+)
 
-
-# Construct tasks as "electrons"
+# Run on a local cluster
 @ct.electron(executor=local_k8s_executor)
 def join_words(a, b):
     return ", ".join([a, b])
 
-@ct.electron(executor = eks_k8s_executor)
+# Run on the cloud
+@ct.electron(executor=eks_executor)
 def excitement(a):
     return f"{a}!"
 
-# Construct a workflow of tasks
+# Construct a workflow
 @ct.lattice
 def simple_workflow(a, b):
     phrase = join_words(a, b)
@@ -44,9 +77,11 @@ dispatch_id = ct.dispatch(simple_workflow)("Hello", "World")
 
 ```
 
+For more information about how to get started with Covalent, check out the project [homepage](https://github.com/AgnostiqHQ/covalent) and the official [documentation](https://covalent.readthedocs.io/en/latest/).
+
 ## How to install and test minikube
 
-First, install `kubectl` as well as `minikube` following the instructions[here](https://kubernetes.io/docs/tasks/tools/). One or both of these may be available through your system's package manager.
+First, install `kubectl` as well as `minikube` following the instructions [here](https://kubernetes.io/docs/tasks/tools/). One or both of these may be available through your system's package manager.
 
 Next, create a basic `minikube` cluster:
 
@@ -317,3 +352,18 @@ When you are done, delete the cluster:
 ```
 eksctl delete cluster -f infra/cluster.yaml
 ```
+
+## Release Notes
+
+Release notes are available in the [Changelog](https://github.com/AgnostiqHQ/covalent-kubernetes-plugin/blob/main/CHANGELOG.md).
+
+## Citation
+
+Please use the following citation in any publications:
+
+> W. J. Cunningham, S. K. Radha, F. Hasan, J. Kanem, S. W. Neagle, and S. Sanand.
+> *Covalent.* Zenodo, 2022. https://doi.org/10.5281/zenodo.5903364
+
+## License
+
+Covalent is licensed under the GNU Affero GPL 3.0 License. Covalent may be distributed under other licenses upon request. See the [LICENSE](https://github.com/AgnostiqHQ/covalent/blob/master/LICENSE) file or contact the [support team](mailto:support@agnostiq.ai) for more details.
