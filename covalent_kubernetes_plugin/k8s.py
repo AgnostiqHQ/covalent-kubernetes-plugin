@@ -118,11 +118,11 @@ class KubernetesExecutor(BaseExecutor):
         volumes = [
             client.V1Volume(
                 name="local-data-store",
-                host_path = client.V1HostPathVolumeSource(path=self.data_store)
+                host_path = client.V1HostPathVolumeSource(path="/data")
             )
         ] if self.data_store.startswith("/") else []
         mounts = [
-            client.V1VolumeMount(mount_path=self.data_store, name="local-mount")
+            client.V1VolumeMount(mount_path="/data", name="local-mount")
         ] if self.data_store.startswith("/") else []
         pull_policy = "Never" \
             if image_uri.beginswith("covalent-task") 
@@ -285,7 +285,8 @@ CMD [ "{docker_working_dir}/{func_basename}" ]
         """
 
         func_filename = f"func-{image_tag}.pkl"
-        docker_working_dir = "/opt/covalent"
+        # TODO: Do not hard-code this in multiple places
+        docker_working_dir = "/data"
 
         with tempfile.NamedTemporaryFile(dir=self.cache_dir) as function_file:
             # Write serialized function to file

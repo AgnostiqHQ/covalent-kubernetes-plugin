@@ -56,7 +56,7 @@ minikube start
 
 From here you can view the UI using the command `minikube dashboard` which should open a page in your browser.
 
-Next, create a job specification. Put the following contents in a file called `job.yaml`
+Next, create a job specification. Put the following contents in a file called `job.yaml`:
 
 ```
 apiVersion: batch/v1
@@ -120,3 +120,200 @@ Events:
 ```
 
 You are now ready to use the Covalent Kubernetes Plugin with your minikube cluster!
+
+### Reference configuration
+
+The steps above generated the following authentication and configuration settings:
+
+```
+> kubectl config view --minify
+apiVersion: v1
+clusters:
+- cluster:
+    certificate-authority: /home/will/.minikube/ca.crt
+    extensions:
+    - extension:
+        last-update: Sun, 24 Jul 2022 16:09:01 EDT
+        provider: minikube.sigs.k8s.io
+        version: v1.26.0
+      name: cluster_info
+    server: https://192.168.59.100:8443
+  name: minikube
+contexts:
+- context:
+    cluster: minikube
+    extensions:
+    - extension:
+        last-update: Sun, 24 Jul 2022 16:09:01 EDT
+        provider: minikube.sigs.k8s.io
+        version: v1.26.0
+      name: context_info
+    namespace: default
+    user: minikube
+  name: minikube
+current-context: minikube
+kind: Config
+preferences: {}
+users:
+- name: minikube
+  user:
+    client-certificate: /home/will/.minikube/profiles/minikube/client.crt
+    client-key: /home/will/.minikube/profiles/minikube/client.key
+```
+
+### Cleanup
+
+When you are done, delete the cluster:
+
+```
+minikube delete
+```
+
+
+## How to provision and test AWS Elastic Kubernetes Service
+
+This section assumes you have already downloaded and configured the AWS CLI tool with an IAM user who has permissions to create an EKS cluster. To get started with EKS, install `eksctl`:
+
+```
+curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
+sudo mv /tmp/eksctl /usr/local/bin
+```
+
+Next, run the following:
+
+```
+eksctl create cluster -f infra/cluster.yaml
+```
+
+To get information about the cluster that has been created:
+
+```
+eksctl get cluster --name ckp-test-cluster --region us-east-1
+```
+
+and to view the list of nodes, use `kubectl get nodes`.
+
+### Adding users
+
+Initially only the user who created the cluster will be able to access it. To view the auth config map, run
+
+```
+kubectl -n kube-system get configmap aws-auth -o yaml
+```
+
+We can add another IAM user `newuser` as a cluster administrator using
+
+```
+kubectl -n kube-system edit configmap aws-auth
+```
+
+and inserting the following entry:
+
+```
+data:
+  mapUsers: |
+    - userarn: arn:aws:iam::356198252393:user/newuser
+      username: newuser
+```
+
+If you still encounter permissions errors, consider adding a [role and role binding](https://eksworkshop.com/beginner/090_rbac/create_role_and_binding/) to the cluster.
+
+### Deploying a job
+
+Make sure the context is properly set, check with
+
+```
+kubectl config get-contexts
+```
+
+If it is set to anything other than the EKS cluster, execute
+
+```
+kubectl config use-context <my-cluster-name>
+```
+
+You can now deploy a job using the same method as you did with `minikube`.
+
+To view the status of jobs, run
+
+```
+kubectl describe jobs --selector=job-name=test
+```
+
+### Reference configuration
+
+The steps above generated the following authentication and configuration settings:
+
+```
+> kubectl get configmap -n kube-system aws-auth -o yaml
+apiVersion: v1
+data:
+  mapRoles: |
+    - groups:
+      - system:bootstrappers
+      - system:nodes
+      rolearn: arn:aws:iam::<account_id>:role/eksctl-ckp-test-cluster-nodegroup-NodeInstanceRole-1VH95YLZKOX47
+      username: system:node:{{EC2PrivateDNSName}}
+    - groups:
+      - system:bootstrappers
+      - system:nodes
+      rolearn: arn:aws:iam::<account_id>:role/eksctl-ckp-test-cluster-nodegroup-NodeInstanceRole-1NDG6XAZXQKJM
+      username: system:node:{{EC2PrivateDNSName}}
+  mapUsers: |
+    - userarn: "arn:aws:iam::<account_id>:user/will"
+      username: will
+kind: ConfigMap
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","data":{"mapUsers":"- userarn: \"arn:aws:iam::<account_id>:user/will\"\n  username: will\n"},"kind":"ConfigMap","metadata":{"annotations":{},"name":"aws-auth","namespace":"kube-system"}}
+  creationTimestamp: "2022-07-24T20:35:29Z"
+  name: aws-auth
+  namespace: kube-system
+  resourceVersion: "59802"
+  uid: 1d93c228-9a21-447b-a28d-c09593d0b573
+
+> kubectl config view --minify
+apiVersion: v1
+clusters:
+- cluster:
+    certificate-authority-data: DATA+OMITTED
+    server: https://0A418BB2CE053D6E26E86072C9B2BAFF.yl4.us-east-1.eks.amazonaws.com
+  name: ckp-test-cluster.us-east-1.eksctl.io
+contexts:
+- context:
+    cluster: ckp-test-cluster.us-east-1.eksctl.io
+    user: Administrator@ckp-test-cluster.us-east-1.eksctl.io
+  name: Administrator@ckp-test-cluster.us-east-1.eksctl.io
+current-context: Administrator@ckp-test-cluster.us-east-1.eksctl.io
+kind: Config
+preferences: {}
+users:
+- name: Administrator@ckp-test-cluster.us-east-1.eksctl.io
+  user:
+    exec:
+      apiVersion: client.authentication.k8s.io/v1alpha1
+      args:
+      - eks
+      - get-token
+      - --cluster-name
+      - ckp-test-cluster
+      - --region
+      - us-east-1
+      command: aws
+      env:
+      - name: AWS_STS_REGIONAL_ENDPOINTS
+        value: regional
+      - name: AWS_PROFILE
+        value: Administrator
+      interactiveMode: IfAvailable
+      provideClusterInfo: false
+```
+
+### Cleanup
+
+When you are done, delete the cluster:
+
+```
+eksctl delete cluster -f infra/cluster.yaml
+```
