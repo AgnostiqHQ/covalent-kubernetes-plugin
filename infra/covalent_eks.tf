@@ -26,6 +26,31 @@ variable "vpc_cidr" {
   description = "VPC CIDR range"
 }
 
+variable "instance_types" {
+  default     = ["t2.medium"]
+  description = "List of node instance types"
+}
+
+variable "disk_size" {
+  default     = 8
+  description = "Disk size per node"
+}
+
+variable "min_size" {
+  default     = 1
+  description = "Minimum number of worker nodes"
+}
+
+variable "max_size" {
+  default     = 6
+  description = "Maximum number of worker nodes"
+}
+
+variable "desired_size" {
+  default     = 2
+  description = "Desired number of worker nodes"
+}
+
 locals {
   cluster_name = "${var.name}-cluster"
 
@@ -165,13 +190,13 @@ resource "aws_eks_node_group" "private_node_group" {
 
   ami_type       = "AL2_x86_64"
   capacity_type  = "ON_DEMAND"
-  instance_types = ["t2.small"]
-  disk_size      = 8
+  instance_types = var.instance_types
+  disk_size      = var.disk_size
 
   scaling_config {
-    desired_size = 2
-    max_size     = 6
-    min_size     = 1
+    desired_size = var.desired_size
+    max_size     = var.max_size
+    min_size     = var.min_size
   }
 
   update_config {
