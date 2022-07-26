@@ -21,6 +21,11 @@ variable "aws_region" {
   description = "Region in which the cluster is deployed"
 }
 
+variable "aws_ecr_repo" {
+  default     = "covalent-eks-task"
+  description = "ECR repository used for task images"
+}
+
 variable "vpc_cidr" {
   default     = "10.0.0.0/16"
   description = "VPC CIDR range"
@@ -97,6 +102,14 @@ module "vpc" {
   }
 }
 
+resource "aws_ecr_repository" "ecr_repository" {
+  name = var.aws_ecr_repo
+  image_tag_mutability = "IMMUTABLE"
+  image_scanning_configuration {
+    scan_on_push = false
+  }
+}
+
 resource "aws_iam_role" "eks_iam_role" {
   name = "eks-service-role"
   assume_role_policy = jsonencode({
@@ -154,7 +167,7 @@ resource "aws_iam_role_policy_attachment" "ecr_readonly_policy_attachment" {
 }
 
 resource "aws_eks_cluster" "eks_cluster" {
-  depends_on = [ 
+  depends_on = [
     aws_iam_role_policy_attachment.eks_iam_policy_attachment,
     module.vpc.public_subnets,
     module.vpc.private_subnets

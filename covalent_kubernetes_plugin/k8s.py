@@ -42,6 +42,7 @@ _EXECUTOR_PLUGIN_DEFAULTS = {
     "base_image": "python:3.8-slim-bullseye",
     "k8s_config_file": os.path.join(os.environ["HOME"], ".kube/config"),
     "k8s_context": "",
+    "image_repo": "covalent-eks-task",
     "registry": "localhost",
     "registry_credentials_file": "",
     "data_store": "",
@@ -64,6 +65,7 @@ class KubernetesExecutor(BaseExecutor):
         base_image: str,
         k8s_config_file: str,
         k8s_context: str,
+        image_repo: str,
         registry: str,
         registry_credentials_file: str,
         data_store: str,
@@ -77,6 +79,7 @@ class KubernetesExecutor(BaseExecutor):
         self.base_image = base_image
         self.k8s_config_file = k8s_config_file
         self.k8s_context = k8s_context
+        self.image_repo = image_repo
         self.registry = registry
         self.registry_credentials_file = registry_credentials_file
         self.data_store = data_store
@@ -92,6 +95,7 @@ class KubernetesExecutor(BaseExecutor):
         image_tag = f"{run_id}"
         container_name = f"covalent-task-{image_tag}"
         job_name = f"job-{run_id}"
+        docker_working_dir = "/data"
 
         # Load Kubernetes config file
         config.load_kube_config(self.k8s_config_file)
@@ -118,24 +122,26 @@ class KubernetesExecutor(BaseExecutor):
             kwargs,
             self.base_image,
             image_tag,
+            docker_working_dir,
             result_filename,
         )
 
         volumes = (
             [
                 client.V1Volume(
-                    name="local-mount", host_path=client.V1HostPathVolumeSource(path="/data")
+                    name="local-mount",
+                    host_path=client.V1HostPathVolumeSource(path=docker_working_dir),
                 )
             ]
             if self.data_store.startswith("/")
             else []
         )
         mounts = (
-            [client.V1VolumeMount(mount_path="/data", name="local-mount")]
+            [client.V1VolumeMount(mount_path=docker_working_dir, name="local-mount")]
             if self.data_store.startswith("/")
             else []
         )
-        pull_policy = "Never" if image_uri.startswith("covalent-task") else ""
+        pull_policy = "Never" if image_uri.startswith(self.image_repo) else ""
 
         container = client.V1Container(
             name=container_name,
@@ -285,6 +291,7 @@ CMD [ "{docker_working_dir}/{func_basename}" ]
         kwargs: Dict,
         base_image: str,
         image_tag: str,
+        docker_working_dir: str,
         result_filename: str,
     ) -> str:
         """Package a task using Docker and upload it to AWS ECR.
@@ -295,6 +302,7 @@ CMD [ "{docker_working_dir}/{func_basename}" ]
             kwargs: Keyword arguments consumed by the task.
             base_image: Name of the base image on which to build the task image.
             image_tag: Tag used to identify the Docker image.
+            docker_working_dir: Working directory inside the Docker container.
             result_filename: Name of the pickled result.
 
         Returns:
@@ -302,8 +310,6 @@ CMD [ "{docker_working_dir}/{func_basename}" ]
         """
 
         func_filename = f"func-{image_tag}.pkl"
-        # TODO: Do not hard-code this in multiple places
-        docker_working_dir = "/data"
 
         with tempfile.NamedTemporaryFile(dir=self.cache_dir) as function_file:
             # Write serialized function to file
@@ -375,7 +381,7 @@ CMD [ "{docker_working_dir}/{func_basename}" ]
             )
 
             ecr_registry = ecr_credentials["proxyEndpoint"]
-            image_uri = f"{ecr_registry.replace('https://', '')}/covalent-task:{image_tag}"
+            image_uri = f"{ecr_registry.replace('https://', '')}/{self.image_repo}:{image_tag}"
 
             response = docker_client.login(
                 username=ecr_username, password=ecr_password, registry=ecr_registry
@@ -391,11 +397,11 @@ CMD [ "{docker_working_dir}/{func_basename}" ]
                 registry=self.registry,
             )
 
-            image_uri = f"{self.registry.replace('https://', '')}/covalent-task:{image_tag}"
+            image_uri = f"{self.registry.replace('https://', '')}/{self.image_repo}:{image_tag}"
 
         else:
             # Image remains on the server for local use
-            image_uri = f"covalent-task:{image_tag}"
+            image_uri = f"{self.image_repo}:{image_tag}"
 
         # Tag the image
         image.tag(image_uri, tag=image_tag)

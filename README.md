@@ -63,6 +63,7 @@ local_k8s_executor = KubernetesExecutor(
 
 eks_executor = KubernetesExecutor(
     k8s_context=user@covalent-eks-cluster.us-east-1.eksctl.io,
+    image_repo="covalent-eks-task",
     registry="<account_id>.dkr.ecr.us-east-1.amazonaws.com",
     data_store="s3://<bucket_name>/<file_path>/",
     vcpu="2.0",
