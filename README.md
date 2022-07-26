@@ -36,14 +36,14 @@ The following shows a reference of a Covalent [configuration](https://covalent.r
 ```
 [executors.k8s]
 base_image = "python:3.8-slim-bullseye"
-k8s_config_file = "/home/will/.kube/config"
+k8s_config_file = "/home/user/.kube/config"
 k8s_context = "minikube"
 registry = "localhost"
 registry_credentials_file = ""
 data_store = "/tmp"
 vcpu = "500m"
 memory = "1G"
-cache_dir = "/home/will/.cache/covalent"
+cache_dir = "/home/user/.cache/covalent"
 poll_freq = 10
 ```
 
@@ -97,6 +97,8 @@ For more information about how to get started with Covalent, check out the proje
 
 First, install `kubectl` as well as `minikube` following the instructions [here](https://kubernetes.io/docs/tasks/tools/). One or both of these may be available through your system's package manager.
 
+### Cluster deployment
+
 Next, create a basic `minikube` cluster:
 
 ```
@@ -104,23 +106,6 @@ minikube start
 ```
 
 From here you can view the UI using the command `minikube dashboard` which should open a page in your browser.
-
-Next, create a job specification. Put the following contents in a file called `job.yaml`:
-
-```
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: test
-spec:
-  template:
-    spec:
-      containers:
-      - name: test
-	image: "hello-world:latest"
-      restartPolicy: Never
-  backoffLimit: 4
-```
 
 Before deploying the job, you will need to mount the Covalent cache directory so the Covalent server can communicate with the task container:
 
@@ -135,26 +120,28 @@ iptables -A INPUT -s 192.168.49.0/24 -j ACCEPT
 iptables-save
 ```
 
+### Task deployment
+
 Next, deploy the test job using the command
 
 ```
-kubectl apply -f job.yaml
+kubectl apply -f infra/sample_job.yaml
 ```
 
-which should return `job.batch/test created`. You can view the status move from pending to succeeded on the dashboard. After some time, query the status of the job with
+which should return `job.batch/covalent-k8s-test created`. You can view the status move from pending to succeeded on the dashboard. After some time, query the status of the job with
 
 ```
-kubectl describe jobs/test
+kubectl describe jobs/covalent-k8s-test
 ```
 
-which returns somethign which looks like
+which returns something which looks like
 
 ```
 Name:             test
 Namespace:        default
 Selector:         controller-uid=eaa319c3-4440-4411-b178-6289398cdb6a
 Labels:           controller-uid=eaa319c3-4440-4411-b178-6289398cdb6a
-                  job-name=test
+                  job-name=covalent-k8s-test
 Annotations:      <none>
 Parallelism:      1
 Completions:      1
@@ -192,7 +179,7 @@ The steps above generated the following authentication and configuration setting
 apiVersion: v1
 clusters:
 - cluster:
-    certificate-authority: /home/will/.minikube/ca.crt
+    certificate-authority: /home/user/.minikube/ca.crt
     extensions:
     - extension:
         last-update: Sun, 24 Jul 2022 16:09:01 EDT
@@ -219,13 +206,13 @@ preferences: {}
 users:
 - name: minikube
   user:
-    client-certificate: /home/will/.minikube/profiles/minikube/client.crt
-    client-key: /home/will/.minikube/profiles/minikube/client.key
+    client-certificate: /home/user/.minikube/profiles/minikube/client.crt
+    client-key: /home/user/.minikube/profiles/minikube/client.key
 ```
 
 ### Cleanup
 
-When you are done, delete the cluster:
+When you are done using your cluster, delete it:
 
 ```
 minikube delete
@@ -235,6 +222,8 @@ minikube delete
 ## How to provision and test AWS Elastic Kubernetes Service with Terraform
 
 This section assumes you have already downloaded and configured the AWS CLI tool with an IAM user who has permissions to create an EKS cluster. To get started, [download and install Terraform](https://learn.hashicorp.com/tutorials/terraform/install-cli).
+
+### Cluster deployment
 
 You can edit the input variables in the file `infra/.tfvars` or use the defaults.
 
@@ -269,7 +258,7 @@ data:
 
 If you still encounter permissions errors, consider adding a [role and role binding](https://eksworkshop.com/beginner/090_rbac/create_role_and_binding/) to the cluster.
 
-### Deploying a job
+### Task deployment
 
 Make sure the context is properly set, check with
 
