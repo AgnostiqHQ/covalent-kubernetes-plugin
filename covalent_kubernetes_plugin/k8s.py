@@ -21,39 +21,41 @@
 """Kubernetes executor plugin for the Covalent dispatcher."""
 
 import base64
-import cloudpickle as pickle
-import docker
 import os
 import shutil
 import subprocess
 import tempfile
-import toml
 import time
 import uuid
-
-from kubernetes import client, config
-from kubernetes.client.rest import ApiException
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import cloudpickle as pickle
+import docker
+import toml
 from covalent._shared_files.logger import app_log
 from covalent.executor import BaseExecutor
+from kubernetes import client, config
+from kubernetes.client.rest import ApiException
 
 _EXECUTOR_PLUGIN_DEFAULTS = {
     "base_image": "python:3.8-slim-bullseye",
     "k8s_config_file": os.path.join(os.environ["HOME"], ".kube/config"),
     "k8s_context": "",
-    "registry": "https://index.docker.io/v1/",
+    "registry": "localhost",
     "registry_credentials_file": "",
     "data_store": "",
+    "vcpu": "500m",
+    "memory": "1G",
     "cache_dir": os.path.join(os.environ["HOME"], ".cache/covalent"),
     "poll_freq": 10,
 }
 
-executor_plugin_name  = "KubernetesExecutor"
+executor_plugin_name = "KubernetesExecutor"
 
 # TODO: Update docstrings
-    
+
+
 class KubernetesExecutor(BaseExecutor):
     """Kubernetes executor plugin class."""
 
@@ -66,6 +68,8 @@ class KubernetesExecutor(BaseExecutor):
         registry_credentials_file: str,
         data_store: str,
         poll_freq: int,
+        vcpu: str,
+        memory: str,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -77,8 +81,10 @@ class KubernetesExecutor(BaseExecutor):
         self.registry_credentials_file = registry_credentials_file
         self.data_store = data_store
         self.poll_freq = poll_freq
+        self.vcpu = vcpu
+        self.memory = memory
 
-    def run(self, function: callable, args: List, kwargs: Dict): 
+    def run(self, function: callable, args: List, kwargs: Dict):
         """Submit the function to a Kubernetes cluster."""
 
         run_id = str(uuid.uuid4())
@@ -92,7 +98,7 @@ class KubernetesExecutor(BaseExecutor):
 
         # Validate the context
         contexts, active_context = config.list_kube_config_contexts()
-        contexts = [context['name'] for context in contexts]
+        contexts = [context["name"] for context in contexts]
 
         if self.k8s_context not in contexts:
             raise ValueError(
@@ -104,7 +110,7 @@ class KubernetesExecutor(BaseExecutor):
 
         # Create the cache directory used for storing pickles and metadata
         Path(self.cache_dir).mkdir(parents=True, exist_ok=True)
-        
+
         # Containerize the task and perform any necessary transfers
         image_uri = self._package_and_upload(
             function,
@@ -115,28 +121,37 @@ class KubernetesExecutor(BaseExecutor):
             result_filename,
         )
 
-        volumes = [
-            client.V1Volume(
-                name="local-data-store",
-                host_path = client.V1HostPathVolumeSource(path="/data")
-            )
-        ] if self.data_store.startswith("/") else []
-        mounts = [
-            client.V1VolumeMount(mount_path="/data", name="local-mount")
-        ] if self.data_store.startswith("/") else []
-        pull_policy = "Never" \
-            if image_uri.startswith("covalent-task") \
-            else ""
+        volumes = (
+            [
+                client.V1Volume(
+                    name="local-mount", host_path=client.V1HostPathVolumeSource(path="/data")
+                )
+            ]
+            if self.data_store.startswith("/")
+            else []
+        )
+        mounts = (
+            [client.V1VolumeMount(mount_path="/data", name="local-mount")]
+            if self.data_store.startswith("/")
+            else []
+        )
+        pull_policy = "Never" if image_uri.startswith("covalent-task") else ""
 
         container = client.V1Container(
             name=container_name,
             image=image_uri,
-            image_pull_policy = pull_policy,
-            volume_mounts = mounts,
+            image_pull_policy=pull_policy,
+            volume_mounts=mounts,
+            resources=client.V1ResourceRequirements(
+                requests={
+                    "cpu": self.vcpu,
+                    "memory": self.memory,
+                }
+            ),
         )
 
         pod_template = client.V1PodTemplateSpec(
-            spec.client.V1PodSpec(
+            spec=client.V1PodSpec(
                 containers=[container],
                 volumes=volumes,
                 restart_policy="Never",
@@ -182,10 +197,10 @@ class KubernetesExecutor(BaseExecutor):
         exec_script = """
 import os
 import cloudpickle as pickle
-        
+
 local_func_filename = os.path.join("{docker_working_dir}", "{func_filename}")
 local_result_filename = os.path.join("{docker_working_dir}", "{result_filename}")
-        
+
         """.format(
             docker_working_dir=docker_working_dir,
             func_filename=func_filename,
@@ -199,8 +214,8 @@ import boto3
 s3 = boto3.client("s3")
 s3.download_file("{s3_bucket_name}", "{func_filename}", local_func_filename)
             """.format(
-                local_func_filename=func_filename,
-                s3_bucket_name=self.data_store,
+                func_filename=func_filename,
+                s3_bucket_name=self.data_store[5:],
             )
 
         # Extract and execute the task
@@ -222,19 +237,16 @@ with open(local_result_filename, "wb") as f:
 s3.upload_file(local_result_filename, "{s3_bucket_name}", "{result_filename}")
             """.format(
                 result_filename=result_filename,
-                s3_bucket_name=self.data_store,
+                s3_bucket_name=self.data_store[5:],
             )
 
         return exec_script
 
     def _format_dockerfile(
-        self, 
-        exec_script_filename: str, 
-        docker_working_dir: str, 
-        base_image:str
+        self, exec_script_filename: str, docker_working_dir: str, base_image: str
     ) -> str:
         """Create a Dockerfile which wraps an executable Python task.
-        
+
         Args:
             exec_script_filename: Name of the executable Python script.
             docker_working_dir: Name of the working directory in the container.
@@ -244,10 +256,13 @@ s3.upload_file(local_result_filename, "{s3_bucket_name}", "{result_filename}")
             dockerfile: String object containing a Dockerfile.
         """
 
+        # TODO: Including pre-release covalent is problematic
         dockerfile = """
 FROM {base_image}
 
 RUN pip install --no-cache-dir cloudpickle==2.0.0 boto3==1.20.48
+
+RUN pip install --pre covalent
 
 WORKDIR {docker_working_dir}
 
@@ -255,11 +270,12 @@ COPY {func_basename} {docker_working_dir}
 
 ENTRYPOINT [ "python" ]
 CMD [ "{docker_working_dir}/{func_basename}" ]
-""".format( base_image = base_image,
+""".format(
+            base_image=base_image,
             func_basename=os.path.basename(exec_script_filename),
             docker_working_dir=docker_working_dir,
         )
-        
+
         return dockerfile
 
     def _package_and_upload(
@@ -272,7 +288,7 @@ CMD [ "{docker_working_dir}/{func_basename}" ]
         result_filename: str,
     ) -> str:
         """Package a task using Docker and upload it to AWS ECR.
-        
+
         Args:
             function: A callable Python function.
             args: Positional arguments consumed by the task.
@@ -299,9 +315,10 @@ CMD [ "{docker_working_dir}/{func_basename}" ]
                 import boto3
 
                 s3 = boto3.client("s3")
-                s3.upload_file(function_file.name, self.data_store, func_filename)
+                res = s3.upload_file(function_file.name, self.data_store[5:], func_filename)
+
             else:
-                shutil.copyfile(function_file.name, os.path.join(self.cache_dir, func_filename))
+                shutil.copyfile(function_file.name, os.path.join(self.data_store, func_filename))
 
         with tempfile.NamedTemporaryFile(
             dir=self.cache_dir, mode="w"
@@ -314,13 +331,19 @@ CMD [ "{docker_working_dir}/{func_basename}" ]
                 result_filename,
                 docker_working_dir,
             )
-                
+
             exec_script_file.write(exec_script)
             exec_script_file.flush()
 
+            if self.data_store.startswith("/"):
+                shutil.copyfile(
+                    exec_script_file.name,
+                    os.path.join(self.data_store, exec_script_file.name.split("/")[-1]),
+                )
+
             # Write Dockerfile to file
             dockerfile = self._format_dockerfile(
-                exec_script_file.name, 
+                exec_script_file.name,
                 docker_working_dir,
                 base_image,
             )
@@ -334,7 +357,7 @@ CMD [ "{docker_working_dir}/{func_basename}" ]
                 path=self.cache_dir, dockerfile=dockerfile_file.name, tag=image_tag
             )
 
-        if self.registry.contains("amazonaws.com"):
+        if "amazonaws.com" in self.registry:
             # Login to AWS ECR
             import boto3
 
@@ -355,12 +378,10 @@ CMD [ "{docker_working_dir}/{func_basename}" ]
             image_uri = f"{ecr_registry.replace('https://', '')}/covalent-task:{image_tag}"
 
             response = docker_client.login(
-                username=ecr_username, 
-                password=ecr_password, 
-                registry=ecr_registry
+                username=ecr_username, password=ecr_password, registry=ecr_registry
             )
 
-        elif not self.registry.contains("localhost") and self.registry_credentials_file:
+        elif "localhost" not in self.registry and self.registry_credentials_file:
             # Login using credentials file
             credentials = toml.load(self.registry_credentials_file)
 
@@ -380,26 +401,19 @@ CMD [ "{docker_working_dir}/{func_basename}" ]
         image.tag(image_uri, tag=image_tag)
 
         # Push the image
-        if self.registry.contains("localhost"):
+        if "localhost" in self.registry:
             # If local we assume minikube is running
-            proc = subprocess.run([
-                "minikube", "image", "load", image_uri
-            ], check=True)
+            proc = subprocess.run(["minikube", "image", "load", image_uri], check=True)
 
             if proc.returncode != 0:
                 raise Exception(proc.stderr.decode("utf-8"))
         else:
             response = docker_client.images.push(image_uri, tag=image_tag)
-                
+
         return image_uri
 
     # TODO: These exit codes should be mapped to enum statuses
-    def get_status(
-        self, 
-        api_client, 
-        name: str, 
-        namespace: Optional[str] = "default"
-    ) -> int:
+    def get_status(self, api_client, name: str, namespace: Optional[str] = "default") -> int:
         """Query the status of a previously submitted EKS job.
 
         Args:
@@ -411,27 +425,21 @@ CMD [ "{docker_working_dir}/{func_basename}" ]
         """
 
         # Create an instance of the API class
-        api_instance = kubernetes.client.BatchV1Api(api_client=api_client)
-        
-        try:
-            job = api_instance.read_namespaced_job_status(name,name_space)
-            
-            if job.status.succeeded is not None:
-                if job.status.succeeded > 0:
-                    return 1
-                elif job.status.active > 0:
-                    return 0
-                return -2
-        # TODO: what exception does this catch?
-        except Exception:
-            return -1
+        api_instance = client.BatchV1Api(api_client=api_client)
 
-    def _poll_task(
-        self,
-        api_client, 
-        name: str, 
-        namespace: Optional[str] = "default"
-    ) -> None:
+        job = api_instance.read_namespaced_job_status(name, namespace)
+
+        if job.status.succeeded is not None:
+            if int(job.status.succeeded) > 0:
+                return 1
+            elif job.status.active is not None and int(job.status.active) > 0:
+                return 0
+
+            return -2
+
+        return -3
+
+    def _poll_task(self, api_client, name: str, namespace: Optional[str] = "default") -> None:
         """Poll a Kubernetes task until completion.
 
         Args:
@@ -443,20 +451,21 @@ CMD [ "{docker_working_dir}/{func_basename}" ]
             None
         """
 
-        exit_code = self.get_status(name,api_client,namespace)
+        exit_code = self.get_status(api_client, name, namespace)
 
         while exit_code != 1:
             time.sleep(self.poll_freq)
-            exit_code = self.get_status(name,api_client,namespace)
+            exit_code = self.get_status(api_client, name, namespace)
 
-            if exit_code == -1:
-                api_instance = kubernetes.client.BatchV1Api(api_client=api_client)
+            if exit_code == 0:
+                app_log.debug("Waiting for job completion")
+
+            if exit_code == -1 or exit_code == -2:
+                api_instance = client.BatchV1Api(api_client=api_client)
                 job = api_instance.read_namespaced_job_status(name, namespace)
 
                 app_log.debug("Error while polling job")
                 app_log.debug(job)
-
-                raise
 
     def _query_result(
         self,
@@ -476,36 +485,21 @@ CMD [ "{docker_working_dir}/{func_basename}" ]
             empty_string: A placeholder empty string.
         """
 
-        local_result_filename = os.path.join(task_results_dir, result_filename)
+        if self.data_store.startswith("s3://"):
+            import boto3
 
-        if self.s3_bucket:
             s3 = boto3.client("s3")
-            s3.download_file(self.s3_bucket_name, result_filename, self.cache_dir)
+            s3.download_file(
+                self.data_store[5:], result_filename, os.path.join(self.cache_dir, result_filename)
+            )
         else:
-            shutil.copyfile(os.path.join(self.data_store, result_filename), os.path.join(self.cache_dir, result_filename))
+            shutil.copyfile(
+                os.path.join(self.data_store, result_filename),
+                os.path.join(self.cache_dir, result_filename),
+            )
 
         with open(os.path.join(self.cache_dir, result_filename), "rb") as f:
             result = pickle.load(f)
         os.remove(os.path.join(self.cache_dir, result_filename))
 
         return result
-
-    #TODO: remove this?
-#    def _write_cafile(self,data: str) -> tempfile.NamedTemporaryFile:
-#        # protect yourself from automatic deletion
-#        cafile = tempfile.NamedTemporaryFile(delete=False)
-#        cadata_b64 = data
-#        cadata = base64.b64decode(cadata_b64)
-#        cafile.write(cadata)
-#        cafile.flush()
-#        return cafile
-
-    #TODO: remove this?
-#    def k8s_api_client(self,endpoint: str, token: str, cafile: str) -> kubernetes.client.CoreV1Api:
-#        kconfig = kubernetes.config.kube_config.Configuration(
-#            host=endpoint,
-#            api_key={'authorization': 'Bearer ' + token}
-#        )
-#        kconfig.ssl_ca_cert = cafile
-#        kclient = kubernetes.client.ApiClient(configuration=kconfig)
-#        return kclient
