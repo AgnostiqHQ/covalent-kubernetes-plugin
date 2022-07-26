@@ -223,28 +223,17 @@ minikube delete
 ```
 
 
-## How to provision and test AWS Elastic Kubernetes Service
+## How to provision and test AWS Elastic Kubernetes Service with Terraform
 
-This section assumes you have already downloaded and configured the AWS CLI tool with an IAM user who has permissions to create an EKS cluster. To get started with EKS, install `eksctl`:
+This section assumes you have already downloaded and configured the AWS CLI tool with an IAM user who has permissions to create an EKS cluster. To get started, [download and install Terraform](https://learn.hashicorp.com/tutorials/terraform/install-cli).
 
-```
-curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
-sudo mv /tmp/eksctl /usr/local/bin
-```
+You can edit the input variables in the file `infra/.tfvars` or use the defaults.
 
 Next, run the following:
 
 ```
-eksctl create cluster -f infra/cluster.yaml
+make deploy
 ```
-
-To get information about the cluster that has been created:
-
-```
-eksctl get cluster --name ckp-test-cluster --region us-east-1
-```
-
-and to view the list of nodes, use `kubectl get nodes`.
 
 ### Adding users
 
@@ -305,21 +294,21 @@ data:
     - groups:
       - system:bootstrappers
       - system:nodes
-      rolearn: arn:aws:iam::<account_id>:role/eksctl-ckp-test-cluster-nodegroup-NodeInstanceRole-1VH95YLZKOX47
+      rolearn: arn:aws:iam::<account_id>:role/covalent-eks-cluster-nodegroup-NodeInstanceRole-1VH95YLZKOX47
       username: system:node:{{EC2PrivateDNSName}}
     - groups:
       - system:bootstrappers
       - system:nodes
-      rolearn: arn:aws:iam::<account_id>:role/eksctl-ckp-test-cluster-nodegroup-NodeInstanceRole-1NDG6XAZXQKJM
+      rolearn: arn:aws:iam::<account_id>:role/covalent-eks-cluster-nodegroup-NodeInstanceRole-1NDG6XAZXQKJM
       username: system:node:{{EC2PrivateDNSName}}
   mapUsers: |
-    - userarn: "arn:aws:iam::<account_id>:user/will"
-      username: will
+    - userarn: "arn:aws:iam::<account_id>:user/newuser"
+      username: newuser
 kind: ConfigMap
 metadata:
   annotations:
     kubectl.kubernetes.io/last-applied-configuration: |
-      {"apiVersion":"v1","data":{"mapUsers":"- userarn: \"arn:aws:iam::<account_id>:user/will\"\n  username: will\n"},"kind":"ConfigMap","metadata":{"annotations":{},"name":"aws-auth","namespace":"kube-system"}}
+      {"apiVersion":"v1","data":{"mapUsers":"- userarn: \"arn:aws:iam::<account_id>:user/newuser\"\n  username: newuser\n"},"kind":"ConfigMap","metadata":{"annotations":{},"name":"aws-auth","namespace":"kube-system"}}
   creationTimestamp: "2022-07-24T20:35:29Z"
   name: aws-auth
   namespace: kube-system
@@ -332,17 +321,17 @@ clusters:
 - cluster:
     certificate-authority-data: DATA+OMITTED
     server: https://0A418BB2CE053D6E26E86072C9B2BAFF.yl4.us-east-1.eks.amazonaws.com
-  name: ckp-test-cluster.us-east-1.eksctl.io
+  name: covalent-eks-cluster.us-east-1.eksctl.io
 contexts:
 - context:
-    cluster: ckp-test-cluster.us-east-1.eksctl.io
-    user: Administrator@ckp-test-cluster.us-east-1.eksctl.io
-  name: Administrator@ckp-test-cluster.us-east-1.eksctl.io
-current-context: Administrator@ckp-test-cluster.us-east-1.eksctl.io
+    cluster: covalent-eks-cluster.us-east-1.eksctl.io
+    user: Administrator@covalent-eks-cluster.us-east-1.eksctl.io
+  name: Administrator@covalent-eks-cluster.us-east-1.eksctl.io
+current-context: Administrator@covalent-eks-cluster.us-east-1.eksctl.io
 kind: Config
 preferences: {}
 users:
-- name: Administrator@ckp-test-cluster.us-east-1.eksctl.io
+- name: Administrator@covalent-eks-cluster.us-east-1.eksctl.io
   user:
     exec:
       apiVersion: client.authentication.k8s.io/v1alpha1
@@ -350,7 +339,7 @@ users:
       - eks
       - get-token
       - --cluster-name
-      - ckp-test-cluster
+      - covalent-eks-cluster
       - --region
       - us-east-1
       command: aws
@@ -368,7 +357,7 @@ users:
 When you are done, delete the cluster:
 
 ```
-eksctl delete cluster -f infra/cluster.yaml
+make clean
 ```
 
 ## Release Notes
