@@ -10,7 +10,7 @@
 
 ## Covalent Kubernetes Plugin
 
-Covalent is a Pythonic workflow tool used to execute tasks on advanced computing hardware. This executor plugin interfaces Covalent with [Kubernetes](https://kubernetes.io/) clusters. In order for workflows to be deployable, users must be authenticated to an existing Kubernetes cluster. Users can view their Kubernetes configuration file and validate the connection using the commands 
+Covalent is a Pythonic workflow tool used to execute tasks on advanced computing hardware. This executor plugin interfaces Covalent with [Kubernetes](https://kubernetes.io/) clusters. In order for workflows to be deployable, users must be authenticated to an existing Kubernetes cluster. Users can view their Kubernetes configuration file and validate the connection using the commands
 
 ```
 kubectl config view
@@ -41,6 +41,8 @@ k8s_context = "minikube"
 registry = "localhost"
 registry_credentials_file = ""
 data_store = "/tmp"
+vcpu = "500m"
+memory = "1G"
 cache_dir = "/home/will/.cache/covalent"
 poll_freq = 10
 ```
@@ -53,12 +55,18 @@ Next, interact with the Kubernetes backend via Covalent by declaring an executor
 import covalent as ct
 from covalent_kubernetes_plugin.k8s import KubernetesExecutor
 
-local_k8s_executor = KubernetesExecutor(k8s_context="minikube")
+local_k8s_executor = KubernetesExecutor(
+    k8s_context="minikube"
+    vcpu="100m",
+    memory="500Mi"
+)
 
 eks_executor = KubernetesExecutor(
-    k8s_context=user@ckp-test-cluster.us-east-1.eksctl.io,
+    k8s_context=user@covalent-eks-cluster.us-east-1.eksctl.io,
     registry="<account_id>.dkr.ecr.us-east-1.amazonaws.com",
-    data_store="s3://<bucket_name>/<file_path>/"
+    data_store="s3://<bucket_name>/<file_path>/",
+    vcpu="2.0",
+    memory="4G"
 )
 
 # Run on a local cluster
@@ -132,7 +140,7 @@ Next, deploy the test job using the command
 kubectl apply -f job.yaml
 ```
 
-which should return `job.batch/test created`. You can view the status move from pending to succeeded on the dashboard. After some time, query the status of the job with 
+which should return `job.batch/test created`. You can view the status move from pending to succeeded on the dashboard. After some time, query the status of the job with
 
 ```
 kubectl describe jobs/test
