@@ -31,7 +31,7 @@ with open("VERSION") as f:
 with open("requirements.txt") as f:
     required = f.read().splitlines()
 
-plugins_list = ["kubernetes = covalent_kubernetes_plugin.k8s"]
+plugins_list = ["k8s = covalent_kubernetes_plugin.k8s"]
 
 setup_info = {
     "name": "covalent-kubernetes-plugin",

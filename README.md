@@ -19,6 +19,8 @@ kubectl get nodes
 
 Users who simply wish to test the plugin on minimal infrastructure should skip to the deployment instructions in the following sections.
 
+### Installation
+
 To use this plugin with Covalent, simply install it using `pip`:
 
 ```
@@ -30,6 +32,10 @@ Users can optionally enable support for AWS Elastic Kubernetes Service using
 ```
 pip install covalent-kubernetes-plugin[aws]
 ```
+
+You will also need to install [Docker](https://docs.docker.com/get-docker/) to use this plugin.
+
+### Configuration
 
 The following shows a reference of a Covalent [configuration](https://covalent.readthedocs.io/en/latest/how_to/config/customization.html):
 
@@ -48,6 +54,8 @@ poll_freq = 10
 ```
 
 This describes a configuration for a minimal local deployment with images and data stores also located on the local machine.
+
+### Example workflow
 
 Next, interact with the Kubernetes backend via Covalent by declaring an executor class object and attaching it to an electron:
 
@@ -93,7 +101,7 @@ dispatch_id = ct.dispatch(simple_workflow)("Hello", "World")
 
 For more information about how to get started with Covalent, check out the project [homepage](https://github.com/AgnostiqHQ/covalent) and the official [documentation](https://covalent.readthedocs.io/en/latest/).
 
-## How to install and test minikube
+## Local deployment with minikube
 
 First, install `kubectl` as well as `minikube` following the instructions [here](https://kubernetes.io/docs/tasks/tools/). One or both of these may be available through your system's package manager.
 
@@ -219,7 +227,7 @@ minikube delete
 ```
 
 
-## How to provision and test AWS Elastic Kubernetes Service with Terraform
+## AWS Elastic Kubernetes Service deployment with Terraform
 
 This section assumes you have already downloaded and configured the AWS CLI tool with an IAM user who has permissions to create an EKS cluster. To get started, [download and install Terraform](https://learn.hashicorp.com/tutorials/terraform/install-cli).
 
@@ -232,6 +240,10 @@ Next, run the following:
 ```
 make deploy
 ```
+
+It may take 15 to 20 minutes to deploy this infrastructure. Note that AWS charges \$0.10 per hour for EKS clusters and EC2 instances [vary in price](https://aws.amazon.com/ec2/pricing/). **Running this command will cost money on AWS.**
+
+To view the Kubernetes dashboard, update your `KUBECONFIG` environment variable as instructed in the deployment output, run `kubectl proxy` and then navigate to the [dashboard](http://localhost:8001/api/v1/namespaces/kubernetes-dashboard/services/https:kubernetes-dashboard:/proxy/#!/login). It may take some time for resources to initially appear.
 
 ### Adding users
 
@@ -254,9 +266,11 @@ data:
   mapUsers: |
     - userarn: arn:aws:iam::<account_id>:user/newuser
       username: newuser
+      groups:
+      - system:masters
 ```
 
-If you still encounter permissions errors, consider adding a [role and role binding](https://eksworkshop.com/beginner/090_rbac/create_role_and_binding/) to the cluster.
+The IAM user should not need any additional permissions.
 
 ### Task deployment
 
@@ -302,16 +316,9 @@ data:
   mapUsers: |
     - userarn: "arn:aws:iam::<account_id>:user/newuser"
       username: newuser
+      groups:
+      - system:masters
 kind: ConfigMap
-metadata:
-  annotations:
-    kubectl.kubernetes.io/last-applied-configuration: |
-      {"apiVersion":"v1","data":{"mapUsers":"- userarn: \"arn:aws:iam::<account_id>:user/newuser\"\n  username: newuser\n"},"kind":"ConfigMap","metadata":{"annotations":{},"name":"aws-auth","namespace":"kube-system"}}
-  creationTimestamp: "2022-07-24T20:35:29Z"
-  name: aws-auth
-  namespace: kube-system
-  resourceVersion: "59802"
-  uid: 1d93c228-9a21-447b-a28d-c09593d0b573
 
 > kubectl config view --minify
 apiVersion: v1
@@ -319,33 +326,29 @@ clusters:
 - cluster:
     certificate-authority-data: DATA+OMITTED
     server: https://0A418BB2CE053D6E26E86072C9B2BAFF.yl4.us-east-1.eks.amazonaws.com
-  name: covalent-eks-cluster.us-east-1.eksctl.io
+  name: arn:aws:eks:us-east-1:836486484887:cluster/covalent-eks-cluster
 contexts:
 - context:
-    cluster: covalent-eks-cluster.us-east-1.eksctl.io
-    user: Administrator@covalent-eks-cluster.us-east-1.eksctl.io
-  name: Administrator@covalent-eks-cluster.us-east-1.eksctl.io
-current-context: Administrator@covalent-eks-cluster.us-east-1.eksctl.io
+    cluster: arn:aws:eks:us-east-1:836486484887:cluster/covalent-eks-cluster
+    user: arn:aws:eks:us-east-1:836486484887:cluster/covalent-eks-cluster
+  name: arn:aws:eks:us-east-1:836486484887:cluster/covalent-eks-cluster
+current-context: arn:aws:eks:us-east-1:836486484887:cluster/covalent-eks-cluster
 kind: Config
 preferences: {}
 users:
-- name: Administrator@covalent-eks-cluster.us-east-1.eksctl.io
+- name: arn:aws:eks:us-east-1:836486484887:cluster/covalent-eks-cluster
   user:
     exec:
       apiVersion: client.authentication.k8s.io/v1alpha1
       args:
+      - --region
+      - us-east-1
       - eks
       - get-token
       - --cluster-name
       - covalent-eks-cluster
-      - --region
-      - us-east-1
       command: aws
-      env:
-      - name: AWS_STS_REGIONAL_ENDPOINTS
-        value: regional
-      - name: AWS_PROFILE
-        value: Administrator
+      env: null
       interactiveMode: IfAvailable
       provideClusterInfo: false
 ```

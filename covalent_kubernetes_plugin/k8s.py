@@ -221,7 +221,7 @@ s3 = boto3.client("s3")
 s3.download_file("{s3_bucket_name}", "{func_filename}", local_func_filename)
             """.format(
                 func_filename=func_filename,
-                s3_bucket_name=self.data_store[5:],
+                s3_bucket_name=self.data_store[5:].split("/")[0],
             )
 
         # Extract and execute the task
@@ -243,7 +243,7 @@ with open(local_result_filename, "wb") as f:
 s3.upload_file(local_result_filename, "{s3_bucket_name}", "{result_filename}")
             """.format(
                 result_filename=result_filename,
-                s3_bucket_name=self.data_store[5:],
+                s3_bucket_name=self.data_store[5:].split("/")[0],
             )
 
         return exec_script
@@ -321,7 +321,9 @@ CMD [ "{docker_working_dir}/{func_basename}" ]
                 import boto3
 
                 s3 = boto3.client("s3")
-                res = s3.upload_file(function_file.name, self.data_store[5:], func_filename)
+                res = s3.upload_file(
+                    function_file.name, self.data_store[5:].split("/")[0], func_filename
+                )
 
             else:
                 shutil.copyfile(function_file.name, os.path.join(self.data_store, func_filename))
@@ -496,7 +498,9 @@ CMD [ "{docker_working_dir}/{func_basename}" ]
 
             s3 = boto3.client("s3")
             s3.download_file(
-                self.data_store[5:], result_filename, os.path.join(self.cache_dir, result_filename)
+                self.data_store[5:].split("/")[0],
+                result_filename,
+                os.path.join(self.cache_dir, result_filename),
             )
         else:
             shutil.copyfile(
