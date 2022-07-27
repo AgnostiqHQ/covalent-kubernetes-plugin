@@ -26,6 +26,11 @@ variable "aws_ecr_repo" {
   description = "ECR repository used for task images"
 }
 
+variable "aws_s3_bucket" {
+  default     = "covalent-eks-task"
+  description = "S3 bucket used for file staging"
+}
+
 variable "vpc_cidr" {
   default     = "10.0.0.0/16"
   description = "VPC CIDR range"
@@ -110,6 +115,32 @@ resource "aws_ecr_repository" "ecr_repository" {
   }
 }
 
+resource "aws_s3_bucket" "s3_bucket" {
+  bucket = var.s3_bucket
+}
+
+data "aws_iam_policy_document" "s3_access_document" {
+  statement {
+    actions = [
+      "s3:ListBucket",
+      "s3:PutObject",
+      "s3:GetObject",
+      "s3:DeleteObject",
+    ]
+
+    resources = [
+      "arn:aws:s3:::${var.s3_bucket}",
+      "arn:aws:s3:::${var.s3_bucket}/*",
+    ]
+  }
+}
+
+resource "aws_iam_policy" "s3_access_policy" {
+  name = "CovalentEKSS3Access"
+  path = "/"
+  policy = data.aws_iam_policy_document.s3_access_document.json
+}
+
 resource "aws_iam_role" "eks_iam_role" {
   name = "eks-service-role"
   assume_role_policy = jsonencode({
@@ -154,6 +185,11 @@ resource "aws_iam_role" "eks_node_role" {
 resource "aws_iam_role_policy_attachment" "worker_node_policy_attachment" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
   role       = aws_iam_role.eks_node_role.name
+}
+
+resource "aws_iam_role_policy_attachment" "worker_node_s3_attachment" {
+  policy_arn = aws_iam_policy.s3_access_policy.arn
+  role = aws_iam_role.eks_node_role.name
 }
 
 resource "aws_iam_role_policy_attachment" "cni_policy_attachment" {
@@ -290,13 +326,13 @@ resource "aws_iam_role_policy_attachment" "eks_ca_iam_policy_attach" {
 }
 
 data "tls_certificate" "tls" {
-  url = resource.aws_eks_cluster.eks_cluster.identity[0].oidc[0].issuer
+  url = aws_eks_cluster.eks_cluster.identity[0].oidc[0].issuer
 }
 
 resource "aws_iam_openid_connect_provider" "eks_ca_oidc_provider" {
   client_id_list  = ["sts.amazonaws.com"]
   thumbprint_list = [data.tls_certificate.tls.certificates[0].sha1_fingerprint]
-  url             = resource.aws_eks_cluster.eks_cluster.identity[0].oidc[0].issuer
+  url             = aws_eks_cluster.eks_cluster.identity[0].oidc[0].issuer
 }
 
 output "name" {

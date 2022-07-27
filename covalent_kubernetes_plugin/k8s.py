@@ -97,6 +97,8 @@ class KubernetesExecutor(BaseExecutor):
         job_name = f"job-{run_id}"
         docker_working_dir = "/data"
 
+        app_log.debug(f"Run ID: {run_id}")
+
         # Load Kubernetes config file
         config.load_kube_config(self.k8s_config_file)
 
@@ -372,10 +374,16 @@ CMD [ "{docker_working_dir}/{func_basename}" ]
             if self.registry_credentials_file:
                 os.environ["AWS_SHARED_CREDENTIALS_FILE"] = self.registry_credentials_file
 
+            sts = boto3.client("sts")
+            identity = sts.get_caller_identity()
+
+            app_log.debug(f"Identity: {str(identity)}")
+
             ecr = boto3.client("ecr")
 
             ecr_username = "AWS"
             ecr_credentials = ecr.get_authorization_token()["authorizationData"][0]
+
             ecr_password = (
                 base64.b64decode(ecr_credentials["authorizationToken"])
                 .replace(b"AWS:", b"")
