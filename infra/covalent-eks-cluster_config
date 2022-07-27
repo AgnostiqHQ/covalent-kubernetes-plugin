@@ -1,0 +1,47 @@
+# Copyright 2021 Agnostiq Inc.
+#
+# This file is part of Covalent.
+#
+# Licensed under the GNU Affero General Public License 3.0 (the "License").
+# A copy of the License may be obtained with this software package or at
+#
+#      https://www.gnu.org/licenses/agpl-3.0.en.html
+#
+# Use of this file is prohibited except in compliance with the License. Any
+# modifications or derivative works of this file must retain this copyright
+# notice, and modified files must contain a notice indicating that they have
+# been altered from the originals.
+#
+# Covalent is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+# FITNESS FOR A PARTICULAR PURPOSE. See the License for more details.
+#
+# Relief from the License may be granted by purchasing a commercial license.
+
+apiVersion: v1
+clusters:
+- cluster:
+    certificate-authority-data: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUMvakNDQWVhZ0F3SUJBZ0lCQURBTkJna3Foa2lHOXcwQkFRc0ZBREFWTVJNd0VRWURWUVFERXdwcmRXSmwKY201bGRHVnpNQjRYRFRJeU1EY3lOekF6TURrek9Wb1hEVE15TURjeU5EQXpNRGt6T1Zvd0ZURVRNQkVHQTFVRQpBeE1LYTNWaVpYSnVaWFJsY3pDQ0FTSXdEUVlKS29aSWh2Y05BUUVCQlFBRGdnRVBBRENDQVFvQ2dnRUJBTllmCnVPd004T2FjWmJubmhFaUQ2N1hxVzdvZm5JMjhGR2xUN00xdG9seW8zbnFuWXB2TGJJaUtlUS9QOVg2OW5iK2gKY1UvZERIcDk1RjllTUxYLzdZbjM4TVhsM3Q4MHVKbHBPNW0zZFh1eEZpT3FXc0xKZ0ZxeUlheFdEWVBpb2VMZQp3SXNjRUtmY0FnVGxhVXlrbzcxdTM5Y2xBdTl6ZlFwdDlxbEJYTnN6ZWU4UkEvR21RK0wyYWFmMitpSWp1dWFvCkJLN05kenoxcmF1OVp1WXNaTnNTb2lXbzlRaGF1TU1zcDNwVGhUUTNDcVcwQzBJNVp4NitXampJVGl4bVVWaHgKOXZUZlBIRGVVZFlwTzFSWlg2MTZHNWZxUFd4cmtBa1RjaU05cHc3VVF5aFZ1TmNYNWNGT2xEck5uRVlMdklQRwpncWROYzM1ZUI5WU96cyszekRjQ0F3RUFBYU5aTUZjd0RnWURWUjBQQVFIL0JBUURBZ0trTUE4R0ExVWRFd0VCCi93UUZNQU1CQWY4d0hRWURWUjBPQkJZRUZPVnhXczI2dk9FbjVJczcxODJWNmdNRWV1WkJNQlVHQTFVZEVRUU8KTUF5Q0NtdDFZbVZ5Ym1WMFpYTXdEUVlKS29aSWh2Y05BUUVMQlFBRGdnRUJBTW91bGVsRjd3clNzdFVMV1Qycgora1V6blhGZDZnQm1KaVF2NkRPZ244Ukl4TElVQmorOU9VQ0ZaOEpDQmtNcUNQN3JjMllrcWora2RZbFdobDRBCmg0U3lIS3N4VkdkQ3o2eXJwVXdsVHVvQlpPRW1tUThGNmprMWUya1BPMSs1NVpsU1crWUtCWTF5LzhMVytKeCsKZmdJS2RPc0ZFdXVuUzNZeWRyUXRvUDdNS2YraUhIMjZjNjB6NVhNTkFTTWY2L1FHa3FhY1hsZ2svUGI0azlkbwpMdTRxd3hFMlhmY1FuVVR6L2M3TlFpV3lwUS9EeFI4NHc5REV3R1dyQ1p4aEZpU1Q5MkxoK1FYWkxlbkdGRlQrCkNQbVBibEpkL0t6ZnR3WDVEZnIyRGJnanBqMEZ6My9WZXZqVzhqTlRBYkVnY3ROT2I2NThja1p5WC9ScmhIdk4KeHowPQotLS0tLUVORCBDRVJUSUZJQ0FURS0tLS0tCg==
+    server: https://25EC371AC8EE8C25999D1539D249B609.gr7.us-east-1.eks.amazonaws.com
+  name: arn:aws:eks:us-east-1:836486484887:cluster/covalent-eks-cluster
+contexts:
+- context:
+    cluster: arn:aws:eks:us-east-1:836486484887:cluster/covalent-eks-cluster
+    user: arn:aws:eks:us-east-1:836486484887:cluster/covalent-eks-cluster
+  name: arn:aws:eks:us-east-1:836486484887:cluster/covalent-eks-cluster
+current-context: arn:aws:eks:us-east-1:836486484887:cluster/covalent-eks-cluster
+kind: Config
+preferences: {}
+users:
+- name: arn:aws:eks:us-east-1:836486484887:cluster/covalent-eks-cluster
+  user:
+    exec:
+      apiVersion: client.authentication.k8s.io/v1alpha1
+      command: aws
+      args:
+        - --region
+        - us-east-1
+        - eks
+        - get-token
+        - --cluster-name
+        - covalent-eks-cluster

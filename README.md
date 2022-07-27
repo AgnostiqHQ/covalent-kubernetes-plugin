@@ -19,6 +19,8 @@ kubectl get nodes
 
 Users who simply wish to test the plugin on minimal infrastructure should skip to the deployment instructions in the following sections.
 
+### Installation
+
 To use this plugin with Covalent, simply install it using `pip`:
 
 ```
@@ -31,23 +33,29 @@ Users can optionally enable support for AWS Elastic Kubernetes Service using
 pip install covalent-kubernetes-plugin[aws]
 ```
 
+You will also need to install [Docker](https://docs.docker.com/get-docker/) to use this plugin.
+
+### Configuration
+
 The following shows a reference of a Covalent [configuration](https://covalent.readthedocs.io/en/latest/how_to/config/customization.html):
 
 ```
 [executors.k8s]
 base_image = "python:3.8-slim-bullseye"
-k8s_config_file = "/home/will/.kube/config"
+k8s_config_file = "/home/user/.kube/config"
 k8s_context = "minikube"
 registry = "localhost"
 registry_credentials_file = ""
 data_store = "/tmp"
 vcpu = "500m"
 memory = "1G"
-cache_dir = "/home/will/.cache/covalent"
+cache_dir = "/home/user/.cache/covalent"
 poll_freq = 10
 ```
 
 This describes a configuration for a minimal local deployment with images and data stores also located on the local machine.
+
+### Example workflow
 
 Next, interact with the Kubernetes backend via Covalent by declaring an executor class object and attaching it to an electron:
 
@@ -63,6 +71,7 @@ local_k8s_executor = KubernetesExecutor(
 
 eks_executor = KubernetesExecutor(
     k8s_context=user@covalent-eks-cluster.us-east-1.eksctl.io,
+    image_repo="covalent-eks-task",
     registry="<account_id>.dkr.ecr.us-east-1.amazonaws.com",
     data_store="s3://<bucket_name>/<file_path>/",
     vcpu="2.0",
@@ -92,9 +101,11 @@ dispatch_id = ct.dispatch(simple_workflow)("Hello", "World")
 
 For more information about how to get started with Covalent, check out the project [homepage](https://github.com/AgnostiqHQ/covalent) and the official [documentation](https://covalent.readthedocs.io/en/latest/).
 
-## How to install and test minikube
+## Local deployment with minikube
 
 First, install `kubectl` as well as `minikube` following the instructions [here](https://kubernetes.io/docs/tasks/tools/). One or both of these may be available through your system's package manager.
+
+### Cluster deployment
 
 Next, create a basic `minikube` cluster:
 
@@ -103,23 +114,6 @@ minikube start
 ```
 
 From here you can view the UI using the command `minikube dashboard` which should open a page in your browser.
-
-Next, create a job specification. Put the following contents in a file called `job.yaml`:
-
-```
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: test
-spec:
-  template:
-    spec:
-      containers:
-      - name: test
-	image: "hello-world:latest"
-      restartPolicy: Never
-  backoffLimit: 4
-```
 
 Before deploying the job, you will need to mount the Covalent cache directory so the Covalent server can communicate with the task container:
 
@@ -134,26 +128,28 @@ iptables -A INPUT -s 192.168.49.0/24 -j ACCEPT
 iptables-save
 ```
 
+### Task deployment
+
 Next, deploy the test job using the command
 
 ```
-kubectl apply -f job.yaml
+kubectl apply -f infra/sample_job.yaml
 ```
 
-which should return `job.batch/test created`. You can view the status move from pending to succeeded on the dashboard. After some time, query the status of the job with
+which should return `job.batch/covalent-k8s-test created`. You can view the status move from pending to succeeded on the dashboard. After some time, query the status of the job with
 
 ```
-kubectl describe jobs/test
+kubectl describe jobs/covalent-k8s-test
 ```
 
-which returns somethign which looks like
+which returns
 
 ```
 Name:             test
 Namespace:        default
 Selector:         controller-uid=eaa319c3-4440-4411-b178-6289398cdb6a
 Labels:           controller-uid=eaa319c3-4440-4411-b178-6289398cdb6a
-                  job-name=test
+                  job-name=covalent-k8s-test
 Annotations:      <none>
 Parallelism:      1
 Completions:      1
@@ -191,7 +187,7 @@ The steps above generated the following authentication and configuration setting
 apiVersion: v1
 clusters:
 - cluster:
-    certificate-authority: /home/will/.minikube/ca.crt
+    certificate-authority: /home/user/.minikube/ca.crt
     extensions:
     - extension:
         last-update: Sun, 24 Jul 2022 16:09:01 EDT
@@ -218,41 +214,36 @@ preferences: {}
 users:
 - name: minikube
   user:
-    client-certificate: /home/will/.minikube/profiles/minikube/client.crt
-    client-key: /home/will/.minikube/profiles/minikube/client.key
+    client-certificate: /home/user/.minikube/profiles/minikube/client.crt
+    client-key: /home/user/.minikube/profiles/minikube/client.key
 ```
 
 ### Cleanup
 
-When you are done, delete the cluster:
+When you are done using your cluster, delete it:
 
 ```
 minikube delete
 ```
 
 
-## How to provision and test AWS Elastic Kubernetes Service
+## AWS Elastic Kubernetes Service deployment with Terraform
 
-This section assumes you have already downloaded and configured the AWS CLI tool with an IAM user who has permissions to create an EKS cluster. To get started with EKS, install `eksctl`:
+This section assumes you have already downloaded and configured the AWS CLI tool with an IAM user who has permissions to create an EKS cluster. To get started, [download and install Terraform](https://learn.hashicorp.com/tutorials/terraform/install-cli).
 
-```
-curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
-sudo mv /tmp/eksctl /usr/local/bin
-```
+### Cluster deployment
+
+You can edit the input variables by copying the file `infra/defaults.tfvars` to `infra/.tfvars` and editing the contents.
 
 Next, run the following:
 
 ```
-eksctl create cluster -f infra/cluster.yaml
+make deploy
 ```
 
-To get information about the cluster that has been created:
+It may take 15 to 20 minutes to deploy this infrastructure. Note that AWS charges \$0.10 per hour for EKS clusters and EC2 instances [vary in price](https://aws.amazon.com/ec2/pricing/). **Running this command will cost money on AWS.**
 
-```
-eksctl get cluster --name ckp-test-cluster --region us-east-1
-```
-
-and to view the list of nodes, use `kubectl get nodes`.
+To view the Kubernetes dashboard, update your `KUBECONFIG` environment variable as instructed in the deployment output, run `kubectl proxy` and then navigate to the [dashboard](http://localhost:8001/api/v1/namespaces/kubernetes-dashboard/services/https:kubernetes-dashboard:/proxy/#!/login). It may take some time for resources to initially appear.
 
 ### Adding users
 
@@ -275,11 +266,13 @@ data:
   mapUsers: |
     - userarn: arn:aws:iam::<account_id>:user/newuser
       username: newuser
+      groups:
+      - system:masters
 ```
 
-If you still encounter permissions errors, consider adding a [role and role binding](https://eksworkshop.com/beginner/090_rbac/create_role_and_binding/) to the cluster.
+The IAM user should not need any additional permissions.
 
-### Deploying a job
+### Task deployment
 
 Make sure the context is properly set, check with
 
@@ -313,26 +306,19 @@ data:
     - groups:
       - system:bootstrappers
       - system:nodes
-      rolearn: arn:aws:iam::<account_id>:role/eksctl-ckp-test-cluster-nodegroup-NodeInstanceRole-1VH95YLZKOX47
+      rolearn: arn:aws:iam::<account_id>:role/covalent-eks-cluster-nodegroup-NodeInstanceRole-1VH95YLZKOX47
       username: system:node:{{EC2PrivateDNSName}}
     - groups:
       - system:bootstrappers
       - system:nodes
-      rolearn: arn:aws:iam::<account_id>:role/eksctl-ckp-test-cluster-nodegroup-NodeInstanceRole-1NDG6XAZXQKJM
+      rolearn: arn:aws:iam::<account_id>:role/covalent-eks-cluster-nodegroup-NodeInstanceRole-1NDG6XAZXQKJM
       username: system:node:{{EC2PrivateDNSName}}
   mapUsers: |
-    - userarn: "arn:aws:iam::<account_id>:user/will"
-      username: will
+    - userarn: "arn:aws:iam::<account_id>:user/newuser"
+      username: newuser
+      groups:
+      - system:masters
 kind: ConfigMap
-metadata:
-  annotations:
-    kubectl.kubernetes.io/last-applied-configuration: |
-      {"apiVersion":"v1","data":{"mapUsers":"- userarn: \"arn:aws:iam::<account_id>:user/will\"\n  username: will\n"},"kind":"ConfigMap","metadata":{"annotations":{},"name":"aws-auth","namespace":"kube-system"}}
-  creationTimestamp: "2022-07-24T20:35:29Z"
-  name: aws-auth
-  namespace: kube-system
-  resourceVersion: "59802"
-  uid: 1d93c228-9a21-447b-a28d-c09593d0b573
 
 > kubectl config view --minify
 apiVersion: v1
@@ -340,33 +326,29 @@ clusters:
 - cluster:
     certificate-authority-data: DATA+OMITTED
     server: https://0A418BB2CE053D6E26E86072C9B2BAFF.yl4.us-east-1.eks.amazonaws.com
-  name: ckp-test-cluster.us-east-1.eksctl.io
+  name: arn:aws:eks:us-east-1:836486484887:cluster/covalent-eks-cluster
 contexts:
 - context:
-    cluster: ckp-test-cluster.us-east-1.eksctl.io
-    user: Administrator@ckp-test-cluster.us-east-1.eksctl.io
-  name: Administrator@ckp-test-cluster.us-east-1.eksctl.io
-current-context: Administrator@ckp-test-cluster.us-east-1.eksctl.io
+    cluster: arn:aws:eks:us-east-1:836486484887:cluster/covalent-eks-cluster
+    user: arn:aws:eks:us-east-1:836486484887:cluster/covalent-eks-cluster
+  name: arn:aws:eks:us-east-1:836486484887:cluster/covalent-eks-cluster
+current-context: arn:aws:eks:us-east-1:836486484887:cluster/covalent-eks-cluster
 kind: Config
 preferences: {}
 users:
-- name: Administrator@ckp-test-cluster.us-east-1.eksctl.io
+- name: arn:aws:eks:us-east-1:836486484887:cluster/covalent-eks-cluster
   user:
     exec:
       apiVersion: client.authentication.k8s.io/v1alpha1
       args:
+      - --region
+      - us-east-1
       - eks
       - get-token
       - --cluster-name
-      - ckp-test-cluster
-      - --region
-      - us-east-1
+      - covalent-eks-cluster
       command: aws
-      env:
-      - name: AWS_STS_REGIONAL_ENDPOINTS
-        value: regional
-      - name: AWS_PROFILE
-        value: Administrator
+      env: null
       interactiveMode: IfAvailable
       provideClusterInfo: false
 ```
@@ -376,7 +358,7 @@ users:
 When you are done, delete the cluster:
 
 ```
-eksctl delete cluster -f infra/cluster.yaml
+make clean
 ```
 
 ## Release Notes
