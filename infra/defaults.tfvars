@@ -18,15 +18,13 @@
 #
 # Relief from the License may be granted by purchasing a commercial license.
 
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: covalent-k8s-test
-spec:
-  template:
-    spec:
-      containers:
-      - name: covalent-k8s-test
-	image: "hello-world:latest"
-      restartPolicy: Never
-  backoffLimit: 4
+name = "covalent-eks"
+aws_region = "us-east-1"
+aws_ecr_repo = "covalent-eks-task"
+aws_s3_bucket = "covalent-eks-task"
+vpc_cidr = "10.0.0.0/16"
+instance_types = ["t2.medium"]
+disk_size = 8
+min_size = 1
+max_size = 6
+desired_size = 2

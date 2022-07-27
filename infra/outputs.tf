@@ -18,15 +18,22 @@
 #
 # Relief from the License may be granted by purchasing a commercial license.
 
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: covalent-k8s-test
-spec:
-  template:
-    spec:
-      containers:
-      - name: covalent-k8s-test
-	image: "hello-world:latest"
-      restartPolicy: Never
-  backoffLimit: 4
+output "name" {
+  value       = var.name
+  description = "Exported name"
+}
+
+output "cluster_name" {
+  value       = local.cluster_name
+  description = "Exported EKS cluster name"
+}
+
+output "kubeconfig" {
+  value       = local_file.config.filename
+  description = "Exported kubectl config"
+}
+
+output "eks_ca_iam_role_arn" {
+  value = aws_iam_role.cluster_autoscaler.arn
+  description = "AWS IAM role ARN for EKS Cluster Autoscaler"
+}

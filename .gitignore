@@ -121,3 +121,4 @@ ipython_config.py
 infra/.terraform/*
 infra/*.tfstate*
 infra/cluster_autoscaler.yml
+infra/.terraform.lock.hcl

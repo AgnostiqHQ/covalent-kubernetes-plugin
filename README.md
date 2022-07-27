@@ -142,7 +142,7 @@ which should return `job.batch/covalent-k8s-test created`. You can view the stat
 kubectl describe jobs/covalent-k8s-test
 ```
 
-which returns something which looks like
+which returns
 
 ```
 Name:             test
@@ -233,7 +233,7 @@ This section assumes you have already downloaded and configured the AWS CLI tool
 
 ### Cluster deployment
 
-You can edit the input variables in the file `infra/.tfvars` or use the defaults.
+You can edit the input variables by copying the file `infra/defaults.tfvars` to `infra/.tfvars` and editing the contents.
 
 Next, run the following:
 
