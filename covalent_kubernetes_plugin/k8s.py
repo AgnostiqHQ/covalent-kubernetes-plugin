@@ -87,7 +87,7 @@ class KubernetesExecutor(BaseExecutor):
         self.vcpu = vcpu
         self.memory = memory
 
-    def run(self, function: callable, args: List, kwargs: Dict):
+    def run(self, function: callable, args: List, kwargs: Dict, task_metadata: Dict):
         """Submit the function to a Kubernetes cluster."""
 
         run_id = str(uuid.uuid4())
