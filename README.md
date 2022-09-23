@@ -2,8 +2,7 @@
 
 <div align="center">
 
-<!--<img src="https://raw.githubusercontent.com/AgnostiqHQ/covalent-kubernetes-plugin/main/assets/covalent-k8s-banner.jpg" width=150%>-->
-<img src="./assets/covalent-k8s-banner.jpg" width=150%>
+<img src="https://raw.githubusercontent.com/AgnostiqHQ/covalent-kubernetes-plugin/main/assets/covalent-k8s-banner.jpg" width=150%>
 
 &nbsp;
 

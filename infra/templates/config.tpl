@@ -36,7 +36,8 @@ users:
 - name: arn:aws:eks:${aws_region}:${account_id}:cluster/${cluster_name}
   user:
     exec:
-      apiVersion: client.authentication.k8s.io/v1alpha1
+      apiVersion: client.authentication.k8s.io/v1
+      interactiveMode: Never
       command: aws
       args:
         - --region

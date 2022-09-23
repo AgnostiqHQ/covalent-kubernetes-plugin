@@ -122,3 +122,5 @@ infra/.terraform/*
 infra/*.tfstate*
 infra/cluster_autoscaler.yml
 infra/.terraform.lock.hcl
+infra/covalent-eks-cluster_config
+infra/.tfvars

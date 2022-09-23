@@ -26,13 +26,13 @@ import shutil
 import subprocess
 import tempfile
 import time
-import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import cloudpickle as pickle
 import docker
 import toml
+from covalent._shared_files.config import get_config
 from covalent._shared_files.logger import app_log
 from covalent.executor import BaseExecutor
 from kubernetes import client, config
@@ -46,15 +46,14 @@ _EXECUTOR_PLUGIN_DEFAULTS = {
     "registry": "localhost",
     "registry_credentials_file": "",
     "data_store": "",
+    "region": "",
     "vcpu": "500m",
     "memory": "1G",
     "cache_dir": os.path.join(os.environ["HOME"], ".cache/covalent"),
     "poll_freq": 10,
 }
 
-executor_plugin_name = "KubernetesExecutor"
-
-# TODO: Update docstrings
+EXECUTOR_PLUGIN_NAME = "KubernetesExecutor"
 
 
 class KubernetesExecutor(BaseExecutor):
@@ -62,47 +61,66 @@ class KubernetesExecutor(BaseExecutor):
 
     def __init__(
         self,
-        base_image: str,
-        k8s_config_file: str,
-        k8s_context: str,
-        image_repo: str,
-        registry: str,
-        registry_credentials_file: str,
-        data_store: str,
-        poll_freq: int,
-        vcpu: str,
-        memory: str,
+        base_image: str = "",
+        k8s_config_file: str = "",
+        k8s_context: str = "",
+        image_repo: str = "",
+        registry: str = "",
+        registry_credentials_file: str = "",
+        data_store: str = "",
+        region: str = "",
+        poll_freq: int = 0,
+        vcpu: str = "",
+        memory: str = "",
         **kwargs,
     ):
+        self.base_image = base_image or get_config("executors.k8s.base_image")
+        self.k8s_config_file = k8s_config_file or get_config("executors.k8s.k8s_config_file")
+        self.k8s_context = k8s_context or get_config("executors.k8s.k8s_context")
+        self.image_repo = image_repo or get_config("executors.k8s.image_repo")
+        self.registry = registry or get_config("executors.k8s.registry")
+        self.registry_credentials_file = registry_credentials_file or get_config(
+            "executors.k8s.registry_credentials_file"
+        )
+        self.data_store = data_store or get_config("executors.k8s.data_store")
+        self.region = region or get_config("executors.k8s.region")
+        self.poll_freq = poll_freq or get_config("executors.k8s.poll_freq")
+        self.vcpu = vcpu or get_config("executors.k8s.vcpu")
+        self.memory = memory or get_config("executors.k8s.memory")
+
+        if "cache_dir" not in kwargs:
+            kwargs["cache_dir"] = get_config("executors.k8s.cache_dir")
+
         super().__init__(**kwargs)
 
-        self.base_image = base_image
-        self.k8s_config_file = k8s_config_file
-        self.k8s_context = k8s_context
-        self.image_repo = image_repo
-        self.registry = registry
-        self.registry_credentials_file = registry_credentials_file
-        self.data_store = data_store
-        self.poll_freq = poll_freq
-        self.vcpu = vcpu
-        self.memory = memory
+    def run(self, function: callable, args: List, kwargs: Dict, task_metadata: Dict):
+        """Submit the function to a Kubernetes cluster.
 
-    def run(self, function: callable, args: List, kwargs: Dict):
-        """Submit the function to a Kubernetes cluster."""
+        Args:
+            function: The function to run on the Kubernetes cluster.
+            args: List of positional arguments used by the function.
+            kwargs: Dictionary of keyword arguments used by the function.
+            task_metadata: Dictionary of metadata used during task execution.
 
-        run_id = str(uuid.uuid4())
+        Returns:
+            output: The result of the function execution.
+        """
+
+        dispatch_id = task_metadata["dispatch_id"]
+        node_id = task_metadata["node_id"]
+        run_id = f"{dispatch_id}-{node_id}"
         result_filename = f"result-{run_id}.pkl"
         image_tag = f"{run_id}"
         container_name = f"covalent-task-{image_tag}"
         job_name = f"job-{run_id}"
         docker_working_dir = "/data"
 
-        app_log.debug(f"Run ID: {run_id}")
-
         # Load Kubernetes config file
+        app_log.debug("Loading the Kubernetes configuration")
         config.load_kube_config(self.k8s_config_file)
 
         # Validate the context
+        app_log.debug("Validating the Kubernetes context")
         contexts, active_context = config.list_kube_config_contexts()
         contexts = [context["name"] for context in contexts]
 
@@ -175,11 +193,14 @@ class KubernetesExecutor(BaseExecutor):
             spec=client.V1JobSpec(backoff_limit=0, template=pod_template),
         )
 
+        app_log.debug("Creating job.")
         batch_api = client.BatchV1Api(api_client=api_client)
         batch_api.create_namespaced_job("default", job)
 
+        app_log.debug("Polling job for completion.")
         self._poll_task(api_client, job_name)
 
+        app_log.debug("Querying job result.")
         result = self._query_result(result_filename, image_tag)
 
         return result
@@ -264,13 +285,12 @@ s3.upload_file(local_result_filename, "{s3_bucket_name}", "{result_filename}")
             dockerfile: String object containing a Dockerfile.
         """
 
-        # TODO: Including pre-release covalent is problematic
         dockerfile = """
 FROM {base_image}
 
-RUN pip install --no-cache-dir cloudpickle==2.0.0 boto3==1.20.48
+RUN pip install --no-cache-dir cloudpickle==2.0.0 boto3==1.24.73
 
-RUN pip install --pre covalent
+RUN pip install covalent
 
 WORKDIR {docker_working_dir}
 
@@ -311,6 +331,7 @@ CMD [ "{docker_working_dir}/{func_basename}" ]
             image_uri: URI of the uploaded image.
         """
 
+        app_log.debug("Beginning package and upload.")
         func_filename = f"func-{image_tag}.pkl"
 
         with tempfile.NamedTemporaryFile(dir=self.cache_dir) as function_file:
@@ -322,6 +343,7 @@ CMD [ "{docker_working_dir}/{func_basename}" ]
             if self.data_store.startswith("s3://"):
                 import boto3
 
+                app_log.debug("Uploading task to S3.")
                 s3 = boto3.client("s3")
                 res = s3.upload_file(
                     function_file.name, self.data_store[5:].split("/")[0], func_filename
@@ -361,6 +383,7 @@ CMD [ "{docker_working_dir}/{func_basename}" ]
             dockerfile_file.flush()
 
             # Build the Docker image
+            app_log.debug("Building the Docker image.")
             docker_client = docker.from_env()
 
             image, build_log = docker_client.images.build(
@@ -374,12 +397,13 @@ CMD [ "{docker_working_dir}/{func_basename}" ]
             if self.registry_credentials_file:
                 os.environ["AWS_SHARED_CREDENTIALS_FILE"] = self.registry_credentials_file
 
+            app_log.debug("Authenticating to ECR.")
             sts = boto3.client("sts")
             identity = sts.get_caller_identity()
 
             app_log.debug(f"Identity: {str(identity)}")
 
-            ecr = boto3.client("ecr")
+            ecr = boto3.client("ecr", region_name=self.region)
 
             ecr_username = "AWS"
             ecr_credentials = ecr.get_authorization_token()["authorizationData"][0]
@@ -390,12 +414,17 @@ CMD [ "{docker_working_dir}/{func_basename}" ]
                 .decode("utf-8")
             )
 
-            ecr_registry = ecr_credentials["proxyEndpoint"]
-            image_uri = f"{ecr_registry.replace('https://', '')}/{self.image_repo}:{image_tag}"
+            # ecr_registry = ecr_credentials["proxyEndpoint"]
+            # image_uri = f"{ecr_registry.replace('https://', '')}/{self.image_repo}:{image_tag}"
+            image_uri = f"{self.registry}/{self.image_repo}:{image_tag}"
 
             response = docker_client.login(
-                username=ecr_username, password=ecr_password, registry=ecr_registry
+                # username=ecr_username, password=ecr_password, registry=ecr_registry
+                username=ecr_username,
+                password=ecr_password,
+                registry=self.registry,
             )
+            app_log.debug(f"Response: {response}")
 
         elif "localhost" not in self.registry and self.registry_credentials_file:
             # Login using credentials file
@@ -413,10 +442,9 @@ CMD [ "{docker_working_dir}/{func_basename}" ]
             # Image remains on the server for local use
             image_uri = f"{self.image_repo}:{image_tag}"
 
-        # Tag the image
+        app_log.debug("Tagging Docker image.")
         image.tag(image_uri, tag=image_tag)
 
-        # Push the image
         if "localhost" in self.registry:
             # If local we assume minikube is running
             proc = subprocess.run(["minikube", "image", "load", image_uri], check=True)
@@ -424,11 +452,12 @@ CMD [ "{docker_working_dir}/{func_basename}" ]
             if proc.returncode != 0:
                 raise Exception(proc.stderr.decode("utf-8"))
         else:
+            app_log.debug("Uploading image to ECR.")
             response = docker_client.images.push(image_uri, tag=image_tag)
+            app_log.debug(f"Response: {response}")
 
         return image_uri
 
-    # TODO: These exit codes should be mapped to enum statuses
     def get_status(self, api_client, name: str, namespace: Optional[str] = "default") -> int:
         """Query the status of a previously submitted EKS job.
 
@@ -440,20 +469,16 @@ CMD [ "{docker_working_dir}/{func_basename}" ]
             exit_code: Exit code, if the task has completed, else -1.
         """
 
-        # Create an instance of the API class
         api_instance = client.BatchV1Api(api_client=api_client)
 
         job = api_instance.read_namespaced_job_status(name, namespace)
 
-        if job.status.succeeded is not None:
-            if int(job.status.succeeded) > 0:
-                return 1
-            elif job.status.active is not None and int(job.status.active) > 0:
-                return 0
-
-            return -2
-
-        return -3
+        if job.status.succeeded:
+            return "SUCCEEDED"
+        elif job.status.failed:
+            return "FAILED"
+        else:
+            return "RUNNING"
 
     def _poll_task(self, api_client, name: str, namespace: Optional[str] = "default") -> None:
         """Poll a Kubernetes task until completion.
@@ -467,21 +492,13 @@ CMD [ "{docker_working_dir}/{func_basename}" ]
             None
         """
 
-        exit_code = self.get_status(api_client, name, namespace)
+        status = self.get_status(api_client, name, namespace)
+        app_log.debug(f"Status: {status}")
 
-        while exit_code != 1:
+        while status not in ["SUCCEEDED", "FAILED"]:
             time.sleep(self.poll_freq)
-            exit_code = self.get_status(api_client, name, namespace)
-
-            if exit_code == 0:
-                app_log.debug("Waiting for job completion")
-
-            if exit_code == -1 or exit_code == -2:
-                api_instance = client.BatchV1Api(api_client=api_client)
-                job = api_instance.read_namespaced_job_status(name, namespace)
-
-                app_log.debug("Error while polling job")
-                app_log.debug(job)
+            status = self.get_status(api_client, name, namespace)
+            app_log.debug(f"Status: {status}")
 
     def _query_result(
         self,
