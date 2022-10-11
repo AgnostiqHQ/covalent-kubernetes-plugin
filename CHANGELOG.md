@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [UNRELEASED]
 
+### Fixed
+
+- Requirements point to the correct pre-release of core covalent
+- Syntax in license workflow
+
 ## [0.1.0] - 2022-09-15
 
 ### Added
