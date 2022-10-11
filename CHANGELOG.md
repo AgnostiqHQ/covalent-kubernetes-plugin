@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [UNRELEASED]
 
+## [0.1.1] - 2022-10-11
+
 ### Fixed
 
 - Requirements point to the correct pre-release of core covalent
