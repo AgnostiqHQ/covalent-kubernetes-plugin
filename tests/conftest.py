@@ -1,9 +1,9 @@
 import os
-import pytest
-from kubernetes import client, config
-
 import subprocess
 import threading
+
+import pytest
+from kubernetes import client, config
 
 
 class Command:

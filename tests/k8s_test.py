@@ -18,15 +18,17 @@
 #
 # Relief from the License may be granted by purchasing a commercial license.
 
-import os, re
+import os
+import re
 import subprocess
-from kubernetes import config
-import pytest
-
-from tests.conftest import k8s_test
 
 import covalent as ct
+import pytest
+from kubernetes import config
+
 from covalent_kubernetes_plugin import KubernetesExecutor
+from tests.conftest import k8s_test
+
 
 @pytest.fixture(scope="session")
 def minikube_env_variables():
