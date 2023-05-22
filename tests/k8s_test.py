@@ -33,9 +33,7 @@ from tests.conftest import k8s_test
 @pytest.fixture(scope="session")
 def minikube_env_variables():
     old_environ = dict(os.environ)
-    output = subprocess.check_output(
-        ["minikube", "-p", "minikube", "docker-env"]
-    )
+    output = subprocess.check_output(["minikube", "-p", "minikube", "docker-env"])
     export_re = re.compile('export ([A-Z_]+)="(.*)"\\n')
     export_pairs = export_re.findall(output.decode("UTF-8"))
     for k, v in export_pairs:
@@ -46,16 +44,16 @@ def minikube_env_variables():
     os.environ.clear()
     os.environ.update(old_environ)
 
+
 @pytest.fixture
 def load_kube_config():
     config.load_kube_config(os.getenv("KUBECONFIG", default="~/.kube/config"))
 
+
 @k8s_test
 @pytest.mark.usefixtures("load_kube_config")
 def test_k8s_executor():
-    local_k8s_executor = KubernetesExecutor(
-        k8s_context="minikube"
-    )
+    local_k8s_executor = KubernetesExecutor(k8s_context="minikube")
 
     @ct.electron(executor=local_k8s_executor)
     def join_words(a, b):

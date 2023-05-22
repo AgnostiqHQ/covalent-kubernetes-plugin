@@ -20,10 +20,8 @@ class Command:
 
     def run(self, timeout=0, **kwargs):
         def target(**kwargs):
-            self.process = (
-                subprocess.Popen(  # pylint: disable=consider-using-with
-                    self.cmd, **kwargs
-                )
+            self.process = subprocess.Popen(  # pylint: disable=consider-using-with
+                self.cmd, **kwargs
             )
             self.process.communicate()
 
@@ -37,19 +35,19 @@ class Command:
 
         return self.process.returncode
 
+
 def is_minikube_running() -> bool:
     try:
         cmd = Command("minikube status")
         returncode = cmd.run(timeout=3, shell=True)
         if returncode == 0:
-            config.load_kube_config(
-                config_file=os.getenv("KUBECONFIG", default="~/.kube/config")
-            )
+            config.load_kube_config(config_file=os.getenv("KUBECONFIG", default="~/.kube/config"))
             client.CoreV1Api().list_namespaced_pod("default")
             return True
         return False
     except (config.config_exception.ConfigException, ConnectionRefusedError):
         return False
+
 
 def has_k8s():
     if os.environ.get("SKIP_K8S_TESTS", None) == "true":
@@ -68,7 +66,5 @@ def has_k8s():
 
 def k8s_test(f):
     mark = pytest.mark.kubernetes
-    skip = pytest.mark.skipif(
-        not has_k8s(), reason="kubernetes is unavailable or skipped"
-    )
+    skip = pytest.mark.skipif(not has_k8s(), reason="kubernetes is unavailable or skipped")
     return mark(skip(f))
