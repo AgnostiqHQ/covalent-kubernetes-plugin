@@ -72,4 +72,3 @@ def k8s_test(f):
         not has_k8s(), reason="kubernetes is unavailable or skipped"
     )
     return mark(skip(f))
-
