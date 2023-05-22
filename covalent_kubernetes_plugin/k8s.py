@@ -288,6 +288,9 @@ s3.upload_file(local_result_filename, "{s3_bucket_name}", "{result_filename}")
         dockerfile = """
 FROM {base_image}
 
+RUN apt update
+RUN apt-get install -y gcc python3-dev
+
 RUN pip install --no-cache-dir cloudpickle==2.0.0 boto3==1.24.73
 
 RUN pip install covalent
@@ -387,7 +390,9 @@ CMD [ "{docker_working_dir}/{func_basename}" ]
             docker_client = docker.from_env()
 
             image, build_log = docker_client.images.build(
-                path=self.cache_dir, dockerfile=dockerfile_file.name, tag=image_tag
+                path=self.cache_dir,
+                dockerfile=dockerfile_file.name,
+                tag=image_tag,
             )
 
         if "amazonaws.com" in self.registry:
