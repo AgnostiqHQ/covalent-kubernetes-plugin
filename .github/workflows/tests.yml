@@ -72,7 +72,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           pip install --no-cache-dir -r requirements.txt
-#          pip install --no-cache-dir -r tests/requirements.txt
+          pip install --no-cache-dir -r tests/requirements.txt
       
       - name: Install Covalent
         run: pip install covalent --pre
@@ -97,8 +97,11 @@ jobs:
         run: from covalent.executor import KubernetesExecutor
         shell: python
 
-#      - name: Run tests
-#        run: PYTHONPATH=$PWD/tests pytest -vv tests/ --cov=covalent_kubernetes_plugin
+      - name: Start minikube
+        uses: medyagh/setup-minikube@master
+
+      - name: Run tests
+        run: PYTHONPATH=$PWD/tests pytest -vv tests/ --cov=covalent_kubernetes_plugin
 
 #      - name: Generate coverage report
 #        run: coverage xml -o coverage.xml
