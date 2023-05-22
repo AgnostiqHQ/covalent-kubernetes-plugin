@@ -52,15 +52,6 @@ def is_minikube_running() -> bool:
 def has_k8s():
     if os.environ.get("SKIP_K8S_TESTS", None) == "true":
         return False
-    current_os = os.environ.get("GITHUB_MATRIX_OS")
-    current_python = os.environ.get("GITHUB_MATRIX_PYTHON")
-    if (
-        current_os is not None
-        and current_os != "ubuntu-latest"
-        or current_python is not None
-        and current_python != "3.9"
-    ):
-        return False
     return is_minikube_running()
 
 
