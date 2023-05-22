@@ -21,6 +21,7 @@
 import os
 import re
 import subprocess
+from unittest import mock
 
 import covalent as ct
 import pytest
@@ -30,19 +31,18 @@ from covalent_kubernetes_plugin import KubernetesExecutor
 from tests.conftest import k8s_test
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 def minikube_env_variables():
-    old_environ = dict(os.environ)
+    os_environ = dict(os.environ)
+    env_vars = {}
     output = subprocess.check_output(["minikube", "-p", "minikube", "docker-env"])
     export_re = re.compile('export ([A-Z_]+)="(.*)"\\n')
     export_pairs = export_re.findall(output.decode("UTF-8"))
     for k, v in export_pairs:
-        os.environ[k] = v
+        env_vars[k] = v
 
-    yield
-
-    os.environ.clear()
-    os.environ.update(old_environ)
+    os_environ.update(env_vars)
+    return os_environ
 
 
 @pytest.fixture
@@ -52,22 +52,24 @@ def load_kube_config():
 
 @k8s_test
 @pytest.mark.usefixtures("load_kube_config")
-def test_k8s_executor():
-    local_k8s_executor = KubernetesExecutor(k8s_context="minikube")
+def test_k8s_executor(minikube_env_variables):
+    with mock.patch.dict(os.environ, minikube_env_variables, clear=True):
+        print(os.environ["DOCKER_CERT_PATH"])
+        local_k8s_executor = KubernetesExecutor(k8s_context="minikube")
 
-    @ct.electron(executor=local_k8s_executor)
-    def join_words(a, b):
-        return ", ".join([a, b])
+        @ct.electron(executor=local_k8s_executor)
+        def join_words(a, b):
+            return ", ".join([a, b])
 
-    @ct.electron(executor=local_k8s_executor)
-    def excitement(a):
-        return f"{a}!"
+        @ct.electron(executor=local_k8s_executor)
+        def excitement(a):
+            return f"{a}!"
 
-    @ct.lattice
-    def simple_workflow(a, b):
-        phrase = join_words(a, b)
-        return excitement(phrase)
+        @ct.lattice
+        def simple_workflow(a, b):
+            phrase = join_words(a, b)
+            return excitement(phrase)
 
-    dispatch_id = ct.dispatch(simple_workflow)("Hello", "World")
-    result = ct.get_result(dispatch_id, wait=True)
-    print(result.status)
+        dispatch_id = ct.dispatch(simple_workflow)("Hello", "World")
+        result = ct.get_result(dispatch_id, wait=True)
+        print(result.status)
