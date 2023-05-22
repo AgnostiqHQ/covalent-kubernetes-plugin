@@ -54,7 +54,6 @@ def load_kube_config():
 @pytest.mark.usefixtures("load_kube_config")
 def test_k8s_executor(minikube_env_variables):
     with mock.patch.dict(os.environ, minikube_env_variables, clear=True):
-        print(os.environ["DOCKER_CERT_PATH"])
         local_k8s_executor = KubernetesExecutor(k8s_context="minikube")
 
         @ct.electron(executor=local_k8s_executor)
