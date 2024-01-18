@@ -1,2 +1,5 @@
 include VERSION
 include requirements.txt
+include covalent_kubernetes_plugin/assets/infra/*
+exclude covalent_kubernetes_plugin/assets/infra/*.swp
+include covalent_kubernetes_plugin/assets/infra/*.tf
