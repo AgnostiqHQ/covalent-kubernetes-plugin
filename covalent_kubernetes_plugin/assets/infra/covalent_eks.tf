@@ -228,7 +228,7 @@ resource "aws_eks_node_group" "private_node_group" {
 }
 
 data "template_file" "config" {
-  template = file("${path.module}/templates/config.tpl")
+  template = file("${path.module}/config.tpl")
   vars = {
     certificate_data  = aws_eks_cluster.eks_cluster.certificate_authority[0].data
     cluster_endpoint  = aws_eks_cluster.eks_cluster.endpoint
