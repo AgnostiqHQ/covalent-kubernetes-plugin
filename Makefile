@@ -5,8 +5,8 @@ all:
 	@echo "To tear down infrastructure, use 'make clean'."
 
 deploy:
-	(cd infra && bash ./deploy-eks.sh)
+	(cd covalent_kubernetes_plugin/assets/infra && bash ./deploy-eks.sh)
 
 clean:
-	(cd infra && terraform destroy -auto-approve -state $(HOME)/.cache/covalent/terraform.tfstate)
-	rm -f infra/cluster_autoscaler.yml
+	(cd covalent_kubernetes_plugin/assets/infra && terraform destroy -auto-approve -state $(HOME)/.cache/covalent/terraform.tfstate)
+	rm -f covalent_kubernetes_plugin/infra/templates/cluster_autoscaler.yml

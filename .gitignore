@@ -114,9 +114,8 @@ ipython_config.py
 # Coverage
 .coverage
 
-infra/.terraform/*
-infra/*.tfstate*
-infra/cluster_autoscaler.yml
-infra/.terraform.lock.hcl
-infra/covalent-eks-cluster_config
-infra/.tfvars
+.terraform
+*.tfstate*
+*.terraform.lock.hcl
+covalent-eks-cluster_config
+*.tfvars

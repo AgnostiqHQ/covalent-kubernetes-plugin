@@ -18,7 +18,7 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 4.23"
+      version = "5.17.0"
     }
   }
 }
@@ -83,6 +83,7 @@ resource "aws_ecr_repository" "ecr_repository" {
 
 resource "aws_s3_bucket" "s3_bucket" {
   bucket = var.aws_s3_bucket
+  force_destroy = true
 }
 
 data "aws_iam_policy_document" "s3_access_document" {

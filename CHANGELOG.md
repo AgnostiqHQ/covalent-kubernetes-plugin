@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [UNRELEASED]
 
+## Changed
+
+- Changed the folder structure for the terraform files matching standard plugin folder format
+- Minor code changes to kubernetes yml files
+
 ## [0.2.0] - 2023-09-20
 
 ### Changed
