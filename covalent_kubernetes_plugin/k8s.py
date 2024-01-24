@@ -220,11 +220,12 @@ class KubernetesExecutor(BaseExecutor):
 
         # Execution preamble
         exec_script = """
-import os
-import cloudpickle as pickle
 
-local_func_filename = os.path.join("{docker_working_dir}", "{func_filename}")
-local_result_filename = os.path.join("{docker_working_dir}", "{result_filename}")
+        import os
+        import cloudpickle as pickle
+
+        local_func_filename = os.path.join("{docker_working_dir}", "{func_filename}")
+        local_result_filename = os.path.join("{docker_working_dir}", "{result_filename}")
 
         """.format(
             docker_working_dir=docker_working_dir,
@@ -449,6 +450,7 @@ CMD [ "{docker_working_dir}/{func_basename}" ]
                 raise Exception(proc.stderr.decode("utf-8"))
         else:
             app_log.debug("Uploading image to ECR.")
+            app_log.debug(f"the image URI is {image_uri}")
             response = docker_client.images.push(image_uri, tag=image_tag)
             app_log.debug(f"Response: {response}")
 
