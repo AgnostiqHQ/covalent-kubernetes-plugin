@@ -113,7 +113,10 @@ class KubernetesExecutor(BaseExecutor):
 
         # Load Kubernetes config file
         app_log.debug("Loading the Kubernetes configuration")
-        config.load_kube_config(self.k8s_config_file)
+        config.load_kube_config(
+            config_file=self.k8s_config_file,
+            context=self.k8s_context
+            )
 
         # Validate the context
         app_log.debug("Validating the Kubernetes context")
@@ -157,7 +160,7 @@ class KubernetesExecutor(BaseExecutor):
             if self.data_store.startswith("/")
             else []
         )
-        pull_policy = "Never" if image_uri.startswith(self.image_repo) else ""
+        pull_policy = "Always" if image_uri.startswith(self.image_repo) else ""
 
         container = client.V1Container(
             name=container_name,
@@ -189,9 +192,10 @@ class KubernetesExecutor(BaseExecutor):
             spec=client.V1JobSpec(backoff_limit=0, template=pod_template),
         )
 
-        app_log.debug("Creating job.")
+        app_log.debug("@@@Creating job.")
         batch_api = client.BatchV1Api(api_client=api_client)
         batch_api.create_namespaced_job("default", job)
+        app_log.debug("###Job creation done")
 
         app_log.debug("Polling job for completion.")
         self._poll_task(api_client, job_name)
@@ -219,7 +223,7 @@ class KubernetesExecutor(BaseExecutor):
         """
 
         # Execution preamble
-        exec_script = """
+        exec_script = f"""
 
         import os
         import cloudpickle as pickle
@@ -227,44 +231,31 @@ class KubernetesExecutor(BaseExecutor):
         local_func_filename = os.path.join("{docker_working_dir}", "{func_filename}")
         local_result_filename = os.path.join("{docker_working_dir}", "{result_filename}")
 
-        """.format(
-            docker_working_dir=docker_working_dir,
-            func_filename=func_filename,
-            result_filename=result_filename,
-        )
+        """
 
         # Pull from data store
         if self.data_store.startswith("s3://"):
-            exec_script += """
-import boto3
-s3 = boto3.client("s3")
-s3.download_file("{s3_bucket_name}", "{func_filename}", local_func_filename)
-            """.format(
-                func_filename=func_filename,
-                s3_bucket_name=self.data_store[5:].split("/")[0],
-            )
+            exec_script += f"""
+            import boto3
+            s3 = boto3.client("s3")
+            s3.download_file("{self.data_store[5:].split("/")[0]}", "{func_filename}", local_func_filename)
+            """
 
         # Extract and execute the task
         exec_script += """
+        with open(local_func_filename, "rb") as f:
+            function, args, kwargs = pickle.load(f)
+        result = function(*args, **kwargs)
 
-with open(local_func_filename, "rb") as f:
-    function, args, kwargs = pickle.load(f)
-
-result = function(*args, **kwargs)
-
-with open(local_result_filename, "wb") as f:
-    pickle.dump(result, f)
-
+        with open(local_result_filename, "wb") as f:
+            pickle.dump(result, f)
         """
 
         # Push to data store
         if self.data_store.startswith("s3://"):
-            exec_script += """
-s3.upload_file(local_result_filename, "{s3_bucket_name}", "{result_filename}")
-            """.format(
-                result_filename=result_filename,
-                s3_bucket_name=self.data_store[5:].split("/")[0],
-            )
+            exec_script += f"""
+            s3.upload_file(local_result_filename, "{self.data_store[5:].split("/")[0]}", "{result_filename}")
+            """
 
         return exec_script
 
@@ -282,24 +273,20 @@ s3.upload_file(local_result_filename, "{s3_bucket_name}", "{result_filename}")
             dockerfile: String object containing a Dockerfile.
         """
 
-        dockerfile = """
-FROM {base_image}
+        dockerfile = f"""
+        FROM {base_image}
 
-RUN pip install --no-cache-dir cloudpickle==2.0.0 boto3==1.24.73
+        RUN pip install --no-cache-dir cloudpickle==2.0.0 boto3==1.24.73
 
-RUN pip install covalent
+        RUN pip install covalent>=0.232.0
 
-WORKDIR {docker_working_dir}
+        WORKDIR {docker_working_dir}
 
-COPY {func_basename} {docker_working_dir}
+        COPY {os.path.basename(exec_script_filename)} {docker_working_dir}
 
-ENTRYPOINT [ "python" ]
-CMD [ "{docker_working_dir}/{func_basename}" ]
-""".format(
-            base_image=base_image,
-            func_basename=os.path.basename(exec_script_filename),
-            docker_working_dir=docker_working_dir,
-        )
+        ENTRYPOINT [ "python" ]
+        CMD [ "{docker_working_dir}/{os.path.basename(exec_script_filename)}" ]
+        """
 
         return dockerfile
 

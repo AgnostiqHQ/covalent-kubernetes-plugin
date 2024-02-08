@@ -18,7 +18,6 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "5.17.0"
     }
   }
 }
@@ -240,7 +239,7 @@ data "template_file" "config" {
 
 resource "local_file" "config" {
   content  = data.template_file.config.rendered
-  filename = "${path.module}/${local.cluster_name}_config"
+  filename = "~/.cache/covalent/${local.cluster_name}_config"
 }
 
 data "aws_iam_policy_document" "cluster_autoscaler_sts_policy" {

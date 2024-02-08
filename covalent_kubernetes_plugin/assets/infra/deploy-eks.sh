@@ -50,7 +50,7 @@ export KUBECONFIG=`jq -r '.kubeconfig.value' <<< $outputs`
 
 cluster_name=`jq -r '.cluster_name.value' <<< $outputs`
 autoscaler_role=`jq -r '.eks_ca_iam_role_arn.value' <<< $outputs`
-sed "s|%CLUSTERNAME%|$cluster_name|;s|%ASROLE%|$autoscaler_role|" < cluster_autoscaler.yml > cluster_autoscaler.yml
+sed "s|%CLUSTERNAME%|$cluster_name|;s|%ASROLE%|$autoscaler_role|" < templates/cluster_autoscaler.yml > cluster_autoscaler.yml
 
 echo -e "\nEnabling node autoscaler..."
 
