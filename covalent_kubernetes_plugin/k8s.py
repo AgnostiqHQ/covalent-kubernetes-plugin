@@ -116,7 +116,7 @@ class KubernetesExecutor(BaseExecutor):
         config.load_kube_config(
             config_file=self.k8s_config_file,
             context=self.k8s_context
-            )
+        )
 
         # Validate the context
         app_log.debug("Validating the Kubernetes context")
@@ -160,7 +160,7 @@ class KubernetesExecutor(BaseExecutor):
             if self.data_store.startswith("/")
             else []
         )
-        pull_policy = "Always" if image_uri.startswith(self.image_repo) else ""
+        pull_policy = "Never" if image_uri.startswith(self.image_repo) else ""
 
         container = client.V1Container(
             name=container_name,
@@ -192,10 +192,9 @@ class KubernetesExecutor(BaseExecutor):
             spec=client.V1JobSpec(backoff_limit=0, template=pod_template),
         )
 
-        app_log.debug("@@@Creating job.")
+        app_log.debug("Creating job.")
         batch_api = client.BatchV1Api(api_client=api_client)
         batch_api.create_namespaced_job("default", job)
-        app_log.debug("###Job creation done")
 
         app_log.debug("Polling job for completion.")
         self._poll_task(api_client, job_name)
@@ -225,36 +224,37 @@ class KubernetesExecutor(BaseExecutor):
         # Execution preamble
         exec_script = f"""
 
-        import os
-        import cloudpickle as pickle
+import os
+import cloudpickle as pickle
 
-        local_func_filename = os.path.join("{docker_working_dir}", "{func_filename}")
-        local_result_filename = os.path.join("{docker_working_dir}", "{result_filename}")
+local_func_filename = os.path.join("{docker_working_dir}", "{func_filename}")
+local_result_filename = os.path.join("{docker_working_dir}", "{result_filename}")
 
         """
 
         # Pull from data store
         if self.data_store.startswith("s3://"):
             exec_script += f"""
-            import boto3
-            s3 = boto3.client("s3")
-            s3.download_file("{self.data_store[5:].split("/")[0]}", "{func_filename}", local_func_filename)
+import boto3
+s3 = boto3.client("s3")
+s3.download_file("{self.data_store[5:].split("/")[0]}", "{func_filename}", local_func_filename)
             """
 
         # Extract and execute the task
         exec_script += """
-        with open(local_func_filename, "rb") as f:
-            function, args, kwargs = pickle.load(f)
-        result = function(*args, **kwargs)
+with open(local_func_filename, "rb") as f:
+    function, args, kwargs = pickle.load(f)
 
-        with open(local_result_filename, "wb") as f:
-            pickle.dump(result, f)
+result = function(*args, **kwargs)
+
+with open(local_result_filename, "wb") as f:
+    pickle.dump(result, f)
         """
 
         # Push to data store
         if self.data_store.startswith("s3://"):
             exec_script += f"""
-            s3.upload_file(local_result_filename, "{self.data_store[5:].split("/")[0]}", "{result_filename}")
+s3.upload_file(local_result_filename, "{self.data_store[5:].split("/")[0]}", "{result_filename}")
             """
 
         return exec_script
@@ -276,7 +276,7 @@ class KubernetesExecutor(BaseExecutor):
         dockerfile = f"""
         FROM {base_image}
 
-        RUN pip install --no-cache-dir cloudpickle==2.0.0 boto3==1.24.73
+        RUN pip install --no-cache-dir cloudpickle==3.0.0 boto3==1.24.73
 
         RUN pip install covalent>=0.232.0
 
@@ -437,7 +437,6 @@ class KubernetesExecutor(BaseExecutor):
                 raise Exception(proc.stderr.decode("utf-8"))
         else:
             app_log.debug("Uploading image to ECR.")
-            app_log.debug(f"the image URI is {image_uri}")
             response = docker_client.images.push(image_uri, tag=image_tag)
             app_log.debug(f"Response: {response}")
 
@@ -460,10 +459,9 @@ class KubernetesExecutor(BaseExecutor):
 
         if job.status.succeeded:
             return "SUCCEEDED"
-        elif job.status.failed:
+        if job.status.failed:
             return "FAILED"
-        else:
-            return "RUNNING"
+        return "RUNNING"
 
     def _poll_task(self, api_client, name: str, namespace: Optional[str] = "default") -> None:
         """Poll a Kubernetes task until completion.
