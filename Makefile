@@ -9,4 +9,4 @@ deploy:
 
 clean:
 	(cd covalent_kubernetes_plugin/assets/infra && terraform destroy -auto-approve -state $(HOME)/.cache/covalent/terraform.tfstate)
-	rm -f covalent_kubernetes_plugin/infra/cluster_autoscaler.yml
+	rm -f covalent_kubernetes_plugin/assets/infra/cluster_autoscaler.yml

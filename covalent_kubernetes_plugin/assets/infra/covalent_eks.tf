@@ -228,7 +228,7 @@ resource "aws_eks_node_group" "private_node_group" {
 }
 
 data "template_file" "config" {
-  template = file("${path.module}/config.tpl")
+  template = file("${path.module}/templates/config.tpl")
   vars = {
     certificate_data = aws_eks_cluster.eks_cluster.certificate_authority[0].data
     cluster_endpoint = aws_eks_cluster.eks_cluster.endpoint
@@ -240,7 +240,7 @@ data "template_file" "config" {
 
 resource "local_file" "config" {
   content  = data.template_file.config.rendered
-  filename = "${path.module}/${local.cluster_name}_config"
+  filename = "${local.cluster_name}_config"
 }
 
 data "aws_iam_policy_document" "cluster_autoscaler_sts_policy" {

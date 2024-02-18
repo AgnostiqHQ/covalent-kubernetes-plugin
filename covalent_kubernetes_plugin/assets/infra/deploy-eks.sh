@@ -65,12 +65,15 @@ token=`kubectl -n kube-system describe secret $(kubectl -n kube-system get secre
   grep eks-admin | awk '{print $1}')`
 
 echo
-echo "Created Kubernetes cluster: $cluster_name"
-echo "Please apply the following to your environment:"
-echo "export KUBECONFIG=$KUBECONFIG"
-echo
 echo "You may view your resources using"
 echo " > kubectl get nodes"
 echo
 echo "View the Kubernetes dashboard at http://localhost:8001/api/v1/namespaces/kubernetes-dashboard/services/https:kubernetes-dashboard:/proxy/#!/login"
 echo "Token: $token"
+echo
+echo 
+echo "Created Kubernetes cluster: $cluster_name"
+mv $KUBECONFIG $STATEPATH/$KUBECONFIG
+echo
+echo "Please apply the following to your environment by typing"
+echo "export KUBECONFIG=$STATEPATH/$KUBECONFIG"

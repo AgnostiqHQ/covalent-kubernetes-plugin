@@ -318,7 +318,7 @@ s3.upload_file(local_result_filename, "{self.data_store[5:].split("/")[0]}", "{r
         app_log.debug("Beginning package and upload.")
         func_filename = f"func-{image_tag}.pkl"
 
-        with tempfile.NamedTemporaryFile(dir=self.cache_dir) as function_file:
+        with tempfile.NamedTemporaryFile(dir=self.cache_dir, delete=False) as function_file:
             # Write serialized function to file
             pickle.dump((function, args, kwargs), function_file)
             function_file.flush()
@@ -334,10 +334,10 @@ s3.upload_file(local_result_filename, "{self.data_store[5:].split("/")[0]}", "{r
                 )
 
             else:
-                shutil.copyfile(function_file.name, os.path.join(self.data_store, func_filename))
+                shutil.copyfile(function_file.name, os.path.join(self.cache_dir, func_filename))
 
         with tempfile.NamedTemporaryFile(
-            dir=self.cache_dir, mode="w"
+            dir=self.cache_dir, mode="w", delete=False
         ) as exec_script_file, tempfile.NamedTemporaryFile(
             dir=self.cache_dir, mode="w"
         ) as dockerfile_file:
@@ -351,11 +351,6 @@ s3.upload_file(local_result_filename, "{self.data_store[5:].split("/")[0]}", "{r
             exec_script_file.write(exec_script)
             exec_script_file.flush()
 
-            if self.data_store.startswith("/"):
-                shutil.copyfile(
-                    exec_script_file.name,
-                    os.path.join(self.data_store, exec_script_file.name.split("/")[-1]),
-                )
 
             # Write Dockerfile to file
             dockerfile = self._format_dockerfile(
@@ -510,11 +505,7 @@ s3.upload_file(local_result_filename, "{self.data_store[5:].split("/")[0]}", "{r
                 result_filename,
                 os.path.join(self.cache_dir, result_filename),
             )
-        else:
-            shutil.copyfile(
-                os.path.join(self.data_store, result_filename),
-                os.path.join(self.cache_dir, result_filename),
-            )
+
 
         with open(os.path.join(self.cache_dir, result_filename), "rb") as f:
             result = pickle.load(f)
