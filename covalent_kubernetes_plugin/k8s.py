@@ -113,10 +113,7 @@ class KubernetesExecutor(BaseExecutor):
 
         # Load Kubernetes config file
         app_log.debug("Loading the Kubernetes configuration")
-        config.load_kube_config(
-            config_file=self.k8s_config_file,
-            context=self.k8s_context
-        )
+        config.load_kube_config(config_file=self.k8s_config_file, context=self.k8s_context)
 
         # Validate the context
         app_log.debug("Validating the Kubernetes context")
@@ -351,7 +348,6 @@ s3.upload_file(local_result_filename, "{self.data_store[5:].split("/")[0]}", "{r
             exec_script_file.write(exec_script)
             exec_script_file.flush()
 
-
             # Write Dockerfile to file
             dockerfile = self._format_dockerfile(
                 exec_script_file.name,
@@ -505,7 +501,6 @@ s3.upload_file(local_result_filename, "{self.data_store[5:].split("/")[0]}", "{r
                 result_filename,
                 os.path.join(self.cache_dir, result_filename),
             )
-
 
         with open(os.path.join(self.cache_dir, result_filename), "rb") as f:
             result = pickle.load(f)
