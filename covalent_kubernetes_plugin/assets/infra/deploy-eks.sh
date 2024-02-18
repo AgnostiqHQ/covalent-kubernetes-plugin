@@ -71,7 +71,7 @@ echo
 echo "View the Kubernetes dashboard at http://localhost:8001/api/v1/namespaces/kubernetes-dashboard/services/https:kubernetes-dashboard:/proxy/#!/login"
 echo "Token: $token"
 echo
-echo 
+echo
 echo "Created Kubernetes cluster: $cluster_name"
 mv $KUBECONFIG $STATEPATH/$KUBECONFIG
 echo
