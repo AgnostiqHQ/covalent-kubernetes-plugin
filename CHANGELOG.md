@@ -10,10 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Changed
 
 - Changed the folder structure for the terraform files matching standard plugin folder format
-- Minor code changes to kubernetes yml files
+- Modified the plugin to generate covalent related files to the **cache_dir** directory
 - Modified MANIFEST.in to validate plugin
-- Modified **requirements.txt** to remove the exact pins for the version to be installed.
+- Modified **requirements.txt** for docker, covalent, kubernetes version to >= 7.0.0, >=0.232.0, >=29.0.0 respectively
 - Modified **requirements.txt** to set covalent version minimum from **0.232.0**
+- 
 
 ## [0.2.0] - 2023-09-20
 

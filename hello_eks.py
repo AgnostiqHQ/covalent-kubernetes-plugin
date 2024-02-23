@@ -11,7 +11,7 @@ account = ""
 cluster_name = ""  # Corresponds to 'name' in .tfvars
 aws_s3_bucket = ""  # Corresponds to 'aws_s3_bucket' in .tfvars
 
-k8s_context = f"arn:aws:eks:{region}:{account}:cluster/{cluster_name}"
+k8s_context = f"arn:aws:eks:{region}:{account}:cluster/{cluster_name}-cluster"
 registry = f"{account}.dkr.ecr.{region}.amazonaws.com"
 data_store = f"s3://{aws_s3_bucket}"
 

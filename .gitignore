@@ -119,3 +119,4 @@ ipython_config.py
 *.terraform.lock.hcl
 covalent-eks-cluster_config
 *.tfvars
+!default.tfvars

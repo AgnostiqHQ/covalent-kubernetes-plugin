@@ -113,7 +113,7 @@ class KubernetesExecutor(BaseExecutor):
 
         # Load Kubernetes config file
         app_log.debug("Loading the Kubernetes configuration")
-        config.load_kube_config(self.k8s_config_file)
+        config.load_kube_config(config_file=self.k8s_config_file, context=self.k8s_context)
 
         # Validate the context
         app_log.debug("Validating the Kubernetes context")
@@ -219,34 +219,26 @@ class KubernetesExecutor(BaseExecutor):
         """
 
         # Execution preamble
-        exec_script = """
+        exec_script = f"""
 
-        import os
-        import cloudpickle as pickle
+import os
+import cloudpickle as pickle
 
-        local_func_filename = os.path.join("{docker_working_dir}", "{func_filename}")
-        local_result_filename = os.path.join("{docker_working_dir}", "{result_filename}")
+local_func_filename = os.path.join("{docker_working_dir}", "{func_filename}")
+local_result_filename = os.path.join("{docker_working_dir}", "{result_filename}")
 
-        """.format(
-            docker_working_dir=docker_working_dir,
-            func_filename=func_filename,
-            result_filename=result_filename,
-        )
+        """
 
         # Pull from data store
         if self.data_store.startswith("s3://"):
-            exec_script += """
+            exec_script += f"""
 import boto3
 s3 = boto3.client("s3")
-s3.download_file("{s3_bucket_name}", "{func_filename}", local_func_filename)
-            """.format(
-                func_filename=func_filename,
-                s3_bucket_name=self.data_store[5:].split("/")[0],
-            )
+s3.download_file("{self.data_store[5:].split("/")[0]}", "{func_filename}", local_func_filename)
+            """
 
         # Extract and execute the task
         exec_script += """
-
 with open(local_func_filename, "rb") as f:
     function, args, kwargs = pickle.load(f)
 
@@ -254,17 +246,13 @@ result = function(*args, **kwargs)
 
 with open(local_result_filename, "wb") as f:
     pickle.dump(result, f)
-
         """
 
         # Push to data store
         if self.data_store.startswith("s3://"):
-            exec_script += """
-s3.upload_file(local_result_filename, "{s3_bucket_name}", "{result_filename}")
-            """.format(
-                result_filename=result_filename,
-                s3_bucket_name=self.data_store[5:].split("/")[0],
-            )
+            exec_script += f"""
+s3.upload_file(local_result_filename, "{self.data_store[5:].split("/")[0]}", "{result_filename}")
+            """
 
         return exec_script
 
@@ -282,24 +270,20 @@ s3.upload_file(local_result_filename, "{s3_bucket_name}", "{result_filename}")
             dockerfile: String object containing a Dockerfile.
         """
 
-        dockerfile = """
-FROM {base_image}
+        dockerfile = f"""
+        FROM {base_image}
 
-RUN pip install --no-cache-dir cloudpickle==2.0.0 boto3==1.24.73
+        RUN pip install --no-cache-dir cloudpickle==3.0.0 boto3==1.24.73
 
-RUN pip install covalent
+        RUN pip install covalent>=0.232.0
 
-WORKDIR {docker_working_dir}
+        WORKDIR {docker_working_dir}
 
-COPY {func_basename} {docker_working_dir}
+        COPY {os.path.basename(exec_script_filename)} {docker_working_dir}
 
-ENTRYPOINT [ "python" ]
-CMD [ "{docker_working_dir}/{func_basename}" ]
-""".format(
-            base_image=base_image,
-            func_basename=os.path.basename(exec_script_filename),
-            docker_working_dir=docker_working_dir,
-        )
+        ENTRYPOINT [ "python" ]
+        CMD [ "{docker_working_dir}/{os.path.basename(exec_script_filename)}" ]
+        """
 
         return dockerfile
 
@@ -331,7 +315,7 @@ CMD [ "{docker_working_dir}/{func_basename}" ]
         app_log.debug("Beginning package and upload.")
         func_filename = f"func-{image_tag}.pkl"
 
-        with tempfile.NamedTemporaryFile(dir=self.cache_dir) as function_file:
+        with tempfile.NamedTemporaryFile(dir=self.cache_dir, delete=False) as function_file:
             # Write serialized function to file
             pickle.dump((function, args, kwargs), function_file)
             function_file.flush()
@@ -347,10 +331,10 @@ CMD [ "{docker_working_dir}/{func_basename}" ]
                 )
 
             else:
-                shutil.copyfile(function_file.name, os.path.join(self.data_store, func_filename))
+                shutil.copyfile(function_file.name, os.path.join(self.cache_dir, func_filename))
 
         with tempfile.NamedTemporaryFile(
-            dir=self.cache_dir, mode="w"
+            dir=self.cache_dir, mode="w", delete=False
         ) as exec_script_file, tempfile.NamedTemporaryFile(
             dir=self.cache_dir, mode="w"
         ) as dockerfile_file:
@@ -363,12 +347,6 @@ CMD [ "{docker_working_dir}/{func_basename}" ]
 
             exec_script_file.write(exec_script)
             exec_script_file.flush()
-
-            if self.data_store.startswith("/"):
-                shutil.copyfile(
-                    exec_script_file.name,
-                    os.path.join(self.data_store, exec_script_file.name.split("/")[-1]),
-                )
 
             # Write Dockerfile to file
             dockerfile = self._format_dockerfile(
@@ -450,7 +428,6 @@ CMD [ "{docker_working_dir}/{func_basename}" ]
                 raise Exception(proc.stderr.decode("utf-8"))
         else:
             app_log.debug("Uploading image to ECR.")
-            app_log.debug(f"the image URI is {image_uri}")
             response = docker_client.images.push(image_uri, tag=image_tag)
             app_log.debug(f"Response: {response}")
 
@@ -473,10 +450,9 @@ CMD [ "{docker_working_dir}/{func_basename}" ]
 
         if job.status.succeeded:
             return "SUCCEEDED"
-        elif job.status.failed:
+        if job.status.failed:
             return "FAILED"
-        else:
-            return "RUNNING"
+        return "RUNNING"
 
     def _poll_task(self, api_client, name: str, namespace: Optional[str] = "default") -> None:
         """Poll a Kubernetes task until completion.
@@ -523,11 +499,6 @@ CMD [ "{docker_working_dir}/{func_basename}" ]
             s3.download_file(
                 self.data_store[5:].split("/")[0],
                 result_filename,
-                os.path.join(self.cache_dir, result_filename),
-            )
-        else:
-            shutil.copyfile(
-                os.path.join(self.data_store, result_filename),
                 os.path.join(self.cache_dir, result_filename),
             )
 

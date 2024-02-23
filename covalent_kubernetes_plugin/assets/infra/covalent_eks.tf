@@ -17,8 +17,7 @@
 terraform {
   required_providers {
     aws = {
-      source  = "hashicorp/aws"
-      version = "5.17.0"
+      source = "hashicorp/aws"
     }
   }
 }
@@ -74,15 +73,16 @@ module "vpc" {
 }
 
 resource "aws_ecr_repository" "ecr_repository" {
-  name = var.aws_ecr_repo
+  name                 = var.aws_ecr_repo
   image_tag_mutability = "IMMUTABLE"
+  force_delete         = true
   image_scanning_configuration {
     scan_on_push = false
   }
 }
 
 resource "aws_s3_bucket" "s3_bucket" {
-  bucket = var.aws_s3_bucket
+  bucket        = var.aws_s3_bucket
   force_destroy = true
 }
 
@@ -103,8 +103,8 @@ data "aws_iam_policy_document" "s3_access_document" {
 }
 
 resource "aws_iam_policy" "s3_access_policy" {
-  name = "CovalentEKSS3Access"
-  path = "/"
+  name   = "CovalentEKSS3Access"
+  path   = "/"
   policy = data.aws_iam_policy_document.s3_access_document.json
 }
 
@@ -156,7 +156,7 @@ resource "aws_iam_role_policy_attachment" "worker_node_policy_attachment" {
 
 resource "aws_iam_role_policy_attachment" "worker_node_s3_attachment" {
   policy_arn = aws_iam_policy.s3_access_policy.arn
-  role = aws_iam_role.eks_node_role.name
+  role       = aws_iam_role.eks_node_role.name
 }
 
 resource "aws_iam_role_policy_attachment" "cni_policy_attachment" {
@@ -202,7 +202,7 @@ resource "aws_eks_node_group" "private_node_group" {
   node_group_name = "${local.cluster_name}-private-ng"
   node_role_arn   = aws_iam_role.eks_node_role.arn
 
-  subnet_ids      = module.vpc.private_subnets
+  subnet_ids = module.vpc.private_subnets
 
   ami_type       = "AL2_x86_64"
   capacity_type  = "ON_DEMAND"
@@ -228,19 +228,19 @@ resource "aws_eks_node_group" "private_node_group" {
 }
 
 data "template_file" "config" {
-  template = file("${path.module}/config.tpl")
+  template = file("${path.module}/templates/config.tpl")
   vars = {
-    certificate_data  = aws_eks_cluster.eks_cluster.certificate_authority[0].data
-    cluster_endpoint  = aws_eks_cluster.eks_cluster.endpoint
-    aws_region        = var.aws_region
-    cluster_name      = local.cluster_name
-    account_id        = data.aws_caller_identity.current.account_id
+    certificate_data = aws_eks_cluster.eks_cluster.certificate_authority[0].data
+    cluster_endpoint = aws_eks_cluster.eks_cluster.endpoint
+    aws_region       = var.aws_region
+    cluster_name     = local.cluster_name
+    account_id       = data.aws_caller_identity.current.account_id
   }
 }
 
 resource "local_file" "config" {
   content  = data.template_file.config.rendered
-  filename = "${path.module}/${local.cluster_name}_config"
+  filename = "${local.cluster_name}_config"
 }
 
 data "aws_iam_policy_document" "cluster_autoscaler_sts_policy" {

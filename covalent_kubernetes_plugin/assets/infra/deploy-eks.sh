@@ -50,7 +50,7 @@ export KUBECONFIG=`jq -r '.kubeconfig.value' <<< $outputs`
 
 cluster_name=`jq -r '.cluster_name.value' <<< $outputs`
 autoscaler_role=`jq -r '.eks_ca_iam_role_arn.value' <<< $outputs`
-sed "s|%CLUSTERNAME%|$cluster_name|;s|%ASROLE%|$autoscaler_role|" < cluster_autoscaler.yml > cluster_autoscaler.yml
+sed "s|%CLUSTERNAME%|$cluster_name|;s|%ASROLE%|$autoscaler_role|" < templates/cluster_autoscaler.yml > cluster_autoscaler.yml
 
 echo -e "\nEnabling node autoscaler..."
 
@@ -65,12 +65,15 @@ token=`kubectl -n kube-system describe secret $(kubectl -n kube-system get secre
   grep eks-admin | awk '{print $1}')`
 
 echo
-echo "Created Kubernetes cluster: $cluster_name"
-echo "Please apply the following to your environment:"
-echo "export KUBECONFIG=$KUBECONFIG"
-echo
 echo "You may view your resources using"
 echo " > kubectl get nodes"
 echo
 echo "View the Kubernetes dashboard at http://localhost:8001/api/v1/namespaces/kubernetes-dashboard/services/https:kubernetes-dashboard:/proxy/#!/login"
 echo "Token: $token"
+echo
+echo
+echo "Created Kubernetes cluster: $cluster_name"
+mv $KUBECONFIG $STATEPATH/$KUBECONFIG
+echo
+echo "Please apply the following to your environment by typing"
+echo "export KUBECONFIG=$STATEPATH/$KUBECONFIG"
